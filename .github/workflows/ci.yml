@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Validate shell syntax
+        run: bash -n bootstrap.sh scripts/*.sh script/*.sh
+
+      - name: Lint Swift formatting
+        run: xcrun swift-format lint --recursive Sources Checks Package.swift
+
+      - name: Run Core checks
+        run: swift run MacBootstrapCoreChecks
+
+      - name: Build release executable
+        run: swift build -c release --product MacBootstrapAgent
