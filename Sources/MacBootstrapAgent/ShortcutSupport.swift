@@ -3,6 +3,15 @@ import Carbon
 import Foundation
 import MacBootstrapCore
 
+func stableHotkeyID(for shortcut: ParsedShortcut) -> UInt32 {
+  var modifierBits: UInt32 = 0
+  if shortcut.modifiers & UInt32(controlKey) != 0 { modifierBits |= 1 << 0 }
+  if shortcut.modifiers & UInt32(optionKey) != 0 { modifierBits |= 1 << 1 }
+  if shortcut.modifiers & UInt32(shiftKey) != 0 { modifierBits |= 1 << 2 }
+  if shortcut.modifiers & UInt32(cmdKey) != 0 { modifierBits |= 1 << 3 }
+  return (shortcut.keyCode & 0xFF) | (modifierBits << 8)
+}
+
 func parseShortcut(_ value: String) -> ParsedShortcut? {
   let parts = value.lowercased().split(separator: "+").map(String.init)
   guard let key = parts.last else { return nil }

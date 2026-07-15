@@ -23,7 +23,7 @@ final class Agent: NSObject, NSApplicationDelegate {
   private var keepAwakeStatusObserver: NSObjectProtocol?
   private var entriesByID: [UInt32: HotkeyAction] = [:]
   private var hotKeyRefs: [EventHotKeyRef] = []
-  private var nextID: UInt32 = 1
+  private var registeredHotkeyIDs = Set<UInt32>()
   private var eventHandler: EventHandlerRef?
   private var statusItem: NSStatusItem?
   private var appHotkeysMenuItem: NSMenuItem?
@@ -326,7 +326,6 @@ final class Agent: NSObject, NSApplicationDelegate {
 
   private func reloadHotkeys() {
     unregisterHotkeys()
-    nextID = 1
     guard config.appHotkeysEnabled else { return }
 
     do {
@@ -348,6 +347,7 @@ final class Agent: NSObject, NSApplicationDelegate {
     }
     hotKeyRefs.removeAll()
     entriesByID.removeAll()
+    registeredHotkeyIDs.removeAll()
   }
 
   private func register(shortcutText: String, label: String, action: HotkeyAction) {
@@ -355,15 +355,19 @@ final class Agent: NSObject, NSApplicationDelegate {
       NSLog("Skipping invalid shortcut: \(shortcutText)")
       return
     }
+    let id = stableHotkeyID(for: shortcut)
+    guard !registeredHotkeyIDs.contains(id) else {
+      NSLog("Skipping duplicate app hotkey: \(shortcutText) for \(label)")
+      return
+    }
     var hotKeyRef: EventHotKeyRef?
-    let id = nextID
-    nextID += 1
     let hotKeyID = EventHotKeyID(signature: OSType(0x4D42_4148), id: id)
     let status = RegisterEventHotKey(
       shortcut.keyCode, shortcut.modifiers, hotKeyID, GetApplicationEventTarget(), 0, &hotKeyRef)
     if status == noErr, let hotKeyRef {
       entriesByID[id] = action
       hotKeyRefs.append(hotKeyRef)
+      registeredHotkeyIDs.insert(id)
     } else {
       NSLog("Failed to register \(shortcutText) for \(label): \(status)")
     }
