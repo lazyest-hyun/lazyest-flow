@@ -445,9 +445,7 @@ final class Agent: NSObject, NSApplicationDelegate {
   }
 
   private func hideApplication(_ app: NSRunningApplication) {
-    let nextApplication = visibleApplicationBehind(excluding: [app.processIdentifier])
-    guard setApplicationHidden(app, true) else { return }
-    activateAfterHiding(nextApplication)
+    setApplicationHidden(app, true)
   }
 
   private func activateAfterHiding(_ application: NSRunningApplication?) {

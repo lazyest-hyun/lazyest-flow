@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.12 - 2026-07-15
+
+- Stopped activating every window of the previously foreground application when hiding a hotkey target, preventing unrelated Chrome windows from covering visible apps on other displays.
+
 ## 0.4.11 - 2026-07-15
 
 - Made app hotkeys hide only their target application, including visible background apps, while preserving the current foreground app.
