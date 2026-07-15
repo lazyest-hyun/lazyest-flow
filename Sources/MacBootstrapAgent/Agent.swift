@@ -307,9 +307,14 @@ final class Agent: NSObject, NSApplicationDelegate {
 
   private var appHotkeysAreActive: Bool {
     guard config.appHotkeysEnabled else { return false }
-    let expectedCount = ((try? config.loadBindings()) ?? []).filter {
+    let appBindingCount = ((try? config.loadBindings()) ?? []).filter {
       $0.isEnabled && parseShortcut($0.shortcut) != nil
     }.count
+    let hideAllCount =
+      ((try? config.loadHideAllBinding()).flatMap { binding in
+        binding.isEnabled && parseShortcut(binding.shortcut) != nil ? 1 : nil
+      }) ?? 0
+    let expectedCount = appBindingCount + hideAllCount
     return hotKeyRefs.count == expectedCount
   }
 
@@ -331,6 +336,14 @@ final class Agent: NSObject, NSApplicationDelegate {
     do {
       for binding in try config.loadBindings() where binding.isEnabled {
         register(shortcutText: binding.shortcut, label: binding.label, action: .toggleApp(binding))
+      }
+      let hideAll = try config.loadHideAllBinding()
+      if hideAll.isEnabled {
+        register(
+          shortcutText: hideAll.shortcut,
+          label: agentText("apps.hideAll"),
+          action: .hideRegisteredApps
+        )
       }
     } catch {
       NSLog("Failed to load hotkey bindings: \(error)")
@@ -378,6 +391,19 @@ final class Agent: NSObject, NSApplicationDelegate {
     switch action {
     case .toggleApp(let binding):
       toggleApp(bundleID: binding.bundleID)
+    case .hideRegisteredApps:
+      hideRegisteredApps()
+    }
+  }
+
+  private func hideRegisteredApps() {
+    guard let bindings = try? config.loadBindings() else { return }
+    let bundleIDs = Set(bindings.filter(\.isEnabled).map(\.bundleID))
+    for bundleID in bundleIDs {
+      for app in NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+      where appHasVisibleWindows(processIdentifier: app.processIdentifier) && !app.isHidden {
+        app.hide()
+      }
     }
   }
 

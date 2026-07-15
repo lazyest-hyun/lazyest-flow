@@ -14,6 +14,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   private weak var activeShortcutField: ShortcutCaptureField?
   private var activeShortcutLabel = ""
   private weak var activeEditingRow: BindingRow?
+  private var isEditingHideAll = false
+  private var hideAllBinding = HideAllBinding(shortcut: "", isEnabled: false)
+  private var shortcutCaptureCancel: (() -> Void)?
   private var removalSheet: AgentRemovalSheetController?
   private lazy var loginLaunchSwitch = settingSwitch(action: #selector(toggleLoginLaunch))
   private let loginLaunchStatusLabel = NSTextField(labelWithString: "")
@@ -23,6 +26,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     return button
   }()
   private lazy var appHotkeysSwitch = settingSwitch(action: #selector(toggleAppHotkeys))
+  private let hideAllShortcutField = ShortcutCaptureField(string: "")
+  private lazy var hideAllEnabledSwitch = settingSwitch(action: #selector(toggleHideAllEnabled))
+  private lazy var hideAllEditButton = actionButton(
+    title: agentText("apps.hideAllSet"), action: #selector(editHideAllShortcut))
+  private lazy var hideAllClearButton = iconButton(
+    symbolName: "xmark", tooltip: agentText("apps.hideAllClear"),
+    action: #selector(clearHideAllShortcut))
   private lazy var mouseScrollReverseSwitch = settingSwitch(
     action: #selector(toggleMouseScrollReverse))
   private lazy var mousePermissionButton = actionButton(
@@ -668,6 +678,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     root.addArrangedSubview(separator())
     root.addArrangedSubview(
       compactSettingRow(title: agentText("apps.enabled"), control: appHotkeysSwitch))
+    root.addArrangedSubview(separator())
+    root.addArrangedSubview(
+      settingRow(
+        title: agentText("apps.hideAll"), detail: agentText("apps.hideAllDetail"),
+        control: hideAllControls()
+      ))
     let listSeparator = separator()
     root.addArrangedSubview(listSeparator)
 
@@ -710,6 +726,32 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     ])
     item.view = root
     return item
+  }
+
+  private func hideAllControls() -> NSStackView {
+    hideAllShortcutField.widthAnchor.constraint(equalToConstant: 110).isActive = true
+    hideAllShortcutField.alignment = .center
+    hideAllShortcutField.placeholderString = agentText("apps.editShortcutHint")
+    hideAllEditButton.widthAnchor.constraint(equalToConstant: 72).isActive = true
+    hideAllClearButton.widthAnchor.constraint(equalToConstant: 40).isActive = true
+    let switchSlot = NSView()
+    switchSlot.widthAnchor.constraint(equalToConstant: 48).isActive = true
+    switchSlot.heightAnchor.constraint(equalToConstant: 32).isActive = true
+    switchSlot.addSubview(hideAllEnabledSwitch)
+    hideAllEnabledSwitch.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      hideAllEnabledSwitch.centerXAnchor.constraint(equalTo: switchSlot.centerXAnchor),
+      hideAllEnabledSwitch.centerYAnchor.constraint(equalTo: switchSlot.centerYAnchor),
+    ])
+    let controls = NSStackView(views: [
+      hideAllShortcutField, hideAllEditButton, hideAllClearButton, switchSlot,
+    ])
+    controls.orientation = .horizontal
+    controls.alignment = .centerY
+    controls.spacing = 8
+    controls.widthAnchor.constraint(equalToConstant: 294).isActive = true
+    configureHideAllControls()
+    return controls
   }
 
   private func generalTab() -> NSTabViewItem {
@@ -1007,9 +1049,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     refreshKeepAwakeUI()
     clearRows()
     let bindings = (try? config.loadBindings()) ?? []
+    hideAllBinding =
+      (try? config.loadHideAllBinding()) ?? HideAllBinding(shortcut: "", isEnabled: false)
     for binding in bindings {
       appendRow(binding)
     }
+    configureHideAllControls()
     setAppShortcutEditingMode(activeRow: nil)
     updateAppHotkeyControls()
     updateAppsHint(count: bindings.count)
@@ -1310,7 +1355,91 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
   }
 
-  private func beginShortcutCapture(for field: ShortcutCaptureField, label: String) {
+  @objc private func editHideAllShortcut() {
+    if isEditingHideAll {
+      let shortcut = hideAllShortcutField.lastCompleteShortcut.trimmingCharacters(in: .whitespaces)
+      guard parseShortcut(shortcut) != nil else { return }
+      hideAllBinding.shortcut = shortcut
+      hideAllBinding.isEnabled = true
+      isEditingHideAll = false
+      endShortcutCapture()
+      configureHideAllControls()
+      setAppShortcutEditingMode(activeRow: nil)
+      savePressed()
+      return
+    }
+
+    isEditingHideAll = true
+    hideAllShortcutField.lastCompleteShortcut = hideAllBinding.shortcut
+    configureHideAllControls()
+    setAppShortcutEditingMode(activeRow: nil)
+    beginShortcutCapture(
+      for: hideAllShortcutField,
+      label: agentText("apps.hideAll"),
+      onCancel: { [weak self] in self?.cancelHideAllEditing() }
+    )
+    window?.makeFirstResponder(hideAllShortcutField)
+  }
+
+  @objc private func clearHideAllShortcut() {
+    if isEditingHideAll {
+      cancelHideAllEditing()
+      return
+    }
+    hideAllBinding = HideAllBinding(shortcut: "", isEnabled: false)
+    configureHideAllControls()
+    savePressed()
+  }
+
+  @objc private func toggleHideAllEnabled() {
+    hideAllBinding.isEnabled =
+      hideAllEnabledSwitch.state == .on
+      && parseShortcut(hideAllBinding.shortcut) != nil
+    configureHideAllControls()
+    savePressed()
+  }
+
+  private func cancelHideAllEditing() {
+    isEditingHideAll = false
+    endShortcutCapture()
+    configureHideAllControls()
+    setAppShortcutEditingMode(activeRow: nil)
+  }
+
+  private func configureHideAllControls() {
+    let configured = parseShortcut(hideAllBinding.shortcut) != nil
+    if !isEditingHideAll {
+      hideAllShortcutField.stringValue = hideAllBinding.shortcut
+      hideAllShortcutField.lastCompleteShortcut = hideAllBinding.shortcut
+    }
+    hideAllShortcutField.isEditable = false
+    hideAllShortcutField.isSelectable = false
+    hideAllShortcutField.isBordered = isEditingHideAll
+    hideAllShortcutField.drawsBackground = isEditingHideAll
+    hideAllShortcutField.backgroundColor = isEditingHideAll ? .textBackgroundColor : .clear
+    hideAllShortcutField.textColor =
+      configured || isEditingHideAll ? .labelColor : .tertiaryLabelColor
+    hideAllEditButton.title =
+      isEditingHideAll
+      ? agentText("apps.applyRow")
+      : (configured ? agentText("apps.editRow") : agentText("apps.hideAllSet"))
+    hideAllClearButton.image = NSImage(
+      systemSymbolName: isEditingHideAll ? "xmark" : "trash",
+      accessibilityDescription: isEditingHideAll
+        ? agentText("apps.cancel") : agentText("apps.hideAllClear")
+    )
+    hideAllClearButton.contentTintColor = isEditingHideAll ? .controlAccentColor : .systemRed
+    hideAllClearButton.toolTip =
+      isEditingHideAll ? agentText("apps.cancel") : agentText("apps.hideAllClear")
+    hideAllClearButton.isEnabled = isEditingHideAll || configured
+    hideAllEnabledSwitch.state = hideAllBinding.isEnabled && configured ? .on : .off
+  }
+
+  private func beginShortcutCapture(
+    for field: ShortcutCaptureField,
+    label: String,
+    onCancel: (() -> Void)? = nil
+  ) {
     endShortcutCapture()
     activeShortcutField = field
     activeShortcutLabel = label
@@ -1319,11 +1448,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
       field?.lastCompleteShortcut = shortcut
       field?.needsDisplay = true
     }
-    field.onCancelCapture = { [weak self] in
-      self?.activeEditingRow?.cancelEditing()
-      self?.endShortcutCapture()
-      self?.setAppShortcutEditingMode(activeRow: nil)
-    }
+    shortcutCaptureCancel =
+      onCancel ?? { [weak self] in
+        self?.activeEditingRow?.cancelEditing()
+        self?.endShortcutCapture()
+        self?.setAppShortcutEditingMode(activeRow: nil)
+      }
+    field.onCancelCapture = { [weak self] in self?.shortcutCaptureCancel?() }
     field.onFocus = { [weak self, weak field] in
       guard let self, let field else { return }
       guard self.activeEditingRow != nil else { return }
@@ -1346,9 +1477,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         return nil
       }
       if event.keyCode == 53 {
-        self.activeEditingRow?.cancelEditing()
-        self.endShortcutCapture()
-        self.setAppShortcutEditingMode(activeRow: nil)
+        self.shortcutCaptureCancel?()
         return nil
       }
       guard let shortcut = shortcutString(from: event) else { return nil }
@@ -1361,7 +1490,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
   private func setAppShortcutEditingMode(activeRow: BindingRow?) {
     activeEditingRow = activeRow
-    let editing = activeRow != nil
+    let editing = activeRow != nil || isEditingHideAll
     for row in rows {
       row.enabledSwitch.isEnabled = appHotkeysSwitch.state == .on && !editing
       if row === activeRow {
@@ -1392,6 +1521,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         row.shortcutField.onFocus = nil
       }
     }
+    hideAllShortcutField.isCapturingShortcut = isEditingHideAll
+    hideAllEditButton.isEnabled = !editing || isEditingHideAll
+    hideAllClearButton.isEnabled =
+      isEditingHideAll || (!editing && parseShortcut(hideAllBinding.shortcut) != nil)
+    hideAllEnabledSwitch.isEnabled = appHotkeysSwitch.state == .on && !editing
     appAddButton.isEnabled = !editing
     appHotkeysSwitch.isEnabled = !editing
     languagePopup.isEnabled = !editing
@@ -1412,6 +1546,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     activeShortcutField?.isCapturingShortcut = false
     activeShortcutField = nil
     activeShortcutLabel = ""
+    shortcutCaptureCancel = nil
     if reloadHotkeys {
       onShortcutCaptureEnd?()
     }
@@ -1638,7 +1773,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
       )
     }
     do {
-      try config.saveBindings(bindings)
+      try config.saveBindings(bindings, hideAllBinding: hideAllBinding)
       try config.saveBootstrap(
         appHotkeysEnabled: appHotkeysSwitch.state == .on,
         mouseScrollReverseEnabled: mouseScrollReverseSwitch.state == .on,

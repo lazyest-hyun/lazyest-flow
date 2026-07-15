@@ -18,8 +18,14 @@ struct AppBinding {
   var isEnabled: Bool
 }
 
+struct HideAllBinding {
+  var shortcut: String
+  var isEnabled: Bool
+}
+
 enum HotkeyAction {
   case toggleApp(AppBinding)
+  case hideRegisteredApps
 }
 
 struct ParsedShortcut {
@@ -73,28 +79,46 @@ final class Config {
     }
   }
 
-  func saveBindings(_ bindings: [AppBinding]) throws {
-    try saveHotkeys(appBindings: bindings)
+  func loadHideAllBinding() throws -> HideAllBinding {
+    let content = try String(contentsOfFile: hotkeyPath, encoding: .utf8)
+    for rawLine in content.split(separator: "\n") {
+      let line = rawLine.trimmingCharacters(in: .whitespaces)
+      guard !line.isEmpty, !line.hasPrefix("#") else { continue }
+      let parts = line.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
+      guard (2...3).contains(parts.count), parts[0] == "hide-all" else { continue }
+      return HideAllBinding(
+        shortcut: parts[1].trimmingCharacters(in: .whitespaces),
+        isEnabled: parts.count == 3 && (parts[2] == "1" || parts[2].lowercased() == "true")
+      )
+    }
+    return HideAllBinding(shortcut: "", isEnabled: false)
   }
 
-  func saveHotkeys(appBindings: [AppBinding]) throws {
+  func saveBindings(_ bindings: [AppBinding], hideAllBinding: HideAllBinding) throws {
+    try saveHotkeys(appBindings: bindings, hideAllBinding: hideAllBinding)
+  }
+
+  func saveHotkeys(appBindings: [AppBinding], hideAllBinding: HideAllBinding) throws {
     guard
       appBindings.allSatisfy({ binding in
         [binding.shortcut, binding.bundleID, binding.label].allSatisfy(isValidHotkeyField)
-      })
+      }),
+      isValidHotkeyField(hideAllBinding.shortcut)
     else {
       throw ConfigError.invalidHotkeyField
     }
     let header = """
       # MacBootstrapAgent app hotkeys.
       # Format: toggle-app|shortcut|bundle-id|label|enabled
+      # Format: hide-all|shortcut|enabled
       # Add, remove, or edit rows from the Agent UI.
 
       """
     let appBody = appBindings.map {
       "toggle-app|\($0.shortcut)|\($0.bundleID)|\($0.label)|\($0.isEnabled ? "1" : "0")"
     }
-    let body = appBody.joined(separator: "\n")
+    let hideAll = "hide-all|\(hideAllBinding.shortcut)|\(hideAllBinding.isEnabled ? "1" : "0")"
+    let body = (appBody + [hideAll]).joined(separator: "\n")
     try (header + body + (body.isEmpty ? "" : "\n")).write(
       toFile: hotkeyPath, atomically: true, encoding: .utf8)
   }
