@@ -676,13 +676,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     header.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
     root.addArrangedSubview(separator())
     root.addArrangedSubview(
-      compactSettingRow(title: agentText("apps.enabled"), control: appHotkeysSwitch))
-    root.addArrangedSubview(separator())
-    root.addArrangedSubview(
-      settingRow(
-        title: agentText("apps.hideAll"), detail: agentText("apps.hideAllDetail"),
-        control: hideAllControls()
-      ))
+      compactSettingRow(title: agentText("apps.enabled"), control: appHotkeyControls()))
     let listSeparator = separator()
     root.addArrangedSubview(listSeparator)
 
@@ -727,19 +721,31 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     return item
   }
 
-  private func hideAllControls() -> NSStackView {
+  private func appHotkeyControls() -> NSStackView {
+    let hideAllLabel = NSTextField(labelWithString: agentText("apps.hideAll"))
+    hideAllLabel.font = NSFont.systemFont(ofSize: 12)
+    hideAllLabel.textColor = .secondaryLabelColor
+    hideAllLabel.toolTip = agentText("apps.hideAllDetail")
     hideAllShortcutField.widthAnchor.constraint(equalToConstant: 110).isActive = true
     hideAllShortcutField.alignment = .center
     hideAllShortcutField.placeholderString = agentText("apps.editShortcutHint")
     hideAllEditButton.widthAnchor.constraint(equalToConstant: 72).isActive = true
     hideAllClearButton.widthAnchor.constraint(equalToConstant: 40).isActive = true
+    let switchSlot = NSView()
+    switchSlot.widthAnchor.constraint(equalToConstant: 48).isActive = true
+    switchSlot.heightAnchor.constraint(equalToConstant: 32).isActive = true
+    switchSlot.addSubview(appHotkeysSwitch)
+    appHotkeysSwitch.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      appHotkeysSwitch.centerXAnchor.constraint(equalTo: switchSlot.centerXAnchor),
+      appHotkeysSwitch.centerYAnchor.constraint(equalTo: switchSlot.centerYAnchor),
+    ])
     let controls = NSStackView(views: [
-      hideAllShortcutField, hideAllEditButton, hideAllClearButton,
+      hideAllLabel, hideAllShortcutField, hideAllEditButton, hideAllClearButton, switchSlot,
     ])
     controls.orientation = .horizontal
     controls.alignment = .centerY
     controls.spacing = 8
-    controls.widthAnchor.constraint(equalToConstant: 238).isActive = true
     configureHideAllControls()
     return controls
   }
