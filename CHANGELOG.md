@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.11 - 2026-07-15
+
+- Made app hotkeys hide only their target application, including visible background apps, while preserving the current foreground app.
+- Used the target application's accessibility hidden state for reliable Electron app toggles and excluded hidden registered apps from foreground handoff.
+- Made the global hide shortcut keep every registered app hidden and activate the first visible unregistered application.
+
 ## 0.4.10 - 2026-07-14
 
 - Moved the language selector from the global footer into the General tab alongside the login-start setting.

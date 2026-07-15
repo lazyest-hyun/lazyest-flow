@@ -399,20 +399,38 @@ final class Agent: NSObject, NSApplicationDelegate {
   private func hideRegisteredApps() {
     guard let bindings = try? config.loadBindings() else { return }
     let bundleIDs = Set(bindings.filter(\.isEnabled).map(\.bundleID))
-    for bundleID in bundleIDs {
-      for app in NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
-      where appHasVisibleWindows(processIdentifier: app.processIdentifier) && !app.isHidden {
-        app.hide()
-      }
+    let registeredApplications = bundleIDs.flatMap {
+      NSRunningApplication.runningApplications(withBundleIdentifier: $0)
     }
+    let applicationsToHide = registeredApplications.filter {
+      appHasVisibleWindows(processIdentifier: $0.processIdentifier)
+        && !applicationIsHidden($0)
+    }
+    guard !applicationsToHide.isEmpty else { return }
+
+    let registeredProcessIdentifiers = Set(registeredApplications.map(\.processIdentifier))
+    let nextApplication = visibleApplicationBehind(excluding: registeredProcessIdentifiers)
+    for application in applicationsToHide {
+      setApplicationHidden(application, true)
+    }
+    activateAfterHiding(nextApplication)
   }
 
   private func toggleApp(bundleID: String) {
     let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
-    if let app = running.first {
+    if let app = running.first(where: { $0.isActive }) ?? running.first {
       let hasVisibleWindows = appHasVisibleWindows(processIdentifier: app.processIdentifier)
-      if hasVisibleWindows && (app.isActive || !app.isHidden) {
-        app.hide()
+      let isHidden = applicationIsHidden(app)
+      let isFrontmost =
+        NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier
+      if hasVisibleWindows && !isHidden {
+        if isFrontmost {
+          hideApplication(app)
+        } else {
+          setApplicationHidden(app, true)
+        }
+      } else if isHidden || hasVisibleWindows {
+        activateExistingApplication(app, bundleID: bundleID)
       } else {
         reopenAndActivate(app: app, bundleID: bundleID)
       }
@@ -426,10 +444,30 @@ final class Agent: NSObject, NSApplicationDelegate {
     }
   }
 
+  private func hideApplication(_ app: NSRunningApplication) {
+    let nextApplication = visibleApplicationBehind(excluding: [app.processIdentifier])
+    guard setApplicationHidden(app, true) else { return }
+    activateAfterHiding(nextApplication)
+  }
+
+  private func activateAfterHiding(_ application: NSRunningApplication?) {
+    let nextApplication = application
+      ?? NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first
+    nextApplication?.activate(options: [.activateAllWindows])
+  }
+
+  private func activateExistingApplication(_ app: NSRunningApplication, bundleID: String) {
+    setApplicationHidden(app, false)
+    let activated = app.activate(options: [.activateAllWindows])
+    if !activated {
+      reopenAndActivate(app: app, bundleID: bundleID)
+    }
+  }
+
   private func reopenAndActivate(app: NSRunningApplication, bundleID: String) {
     guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
-      app.unhide()
-      app.activate(options: [.activateIgnoringOtherApps])
+      setApplicationHidden(app, false)
+      app.activate(options: [.activateAllWindows])
       return
     }
     let configuration = NSWorkspace.OpenConfiguration()
@@ -437,8 +475,8 @@ final class Agent: NSObject, NSApplicationDelegate {
     NSWorkspace.shared.openApplication(at: url, configuration: configuration) { reopenedApp, _ in
       DispatchQueue.main.async {
         let target = reopenedApp ?? app
-        target.unhide()
-        target.activate(options: [.activateIgnoringOtherApps])
+        setApplicationHidden(target, false)
+        target.activate(options: [.activateAllWindows])
       }
     }
   }

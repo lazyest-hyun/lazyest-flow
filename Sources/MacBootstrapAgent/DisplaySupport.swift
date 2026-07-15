@@ -48,6 +48,55 @@ func appHasVisibleWindows(processIdentifier: pid_t) -> Bool {
   }
 }
 
+func applicationIsHidden(_ application: NSRunningApplication) -> Bool {
+  let element = AXUIElementCreateApplication(application.processIdentifier)
+  var value: CFTypeRef?
+  guard
+    AXUIElementCopyAttributeValue(element, kAXHiddenAttribute as CFString, &value) == .success,
+    let number = value as? NSNumber
+  else {
+    return application.isHidden
+  }
+  return number.boolValue
+}
+
+@discardableResult
+func setApplicationHidden(_ application: NSRunningApplication, _ hidden: Bool) -> Bool {
+  let element = AXUIElementCreateApplication(application.processIdentifier)
+  let value = NSNumber(value: hidden)
+  if AXUIElementSetAttributeValue(element, kAXHiddenAttribute as CFString, value) == .success {
+    return true
+  }
+  return hidden ? application.hide() : application.unhide()
+}
+
+func visibleApplicationBehind(excluding processIdentifiers: Set<pid_t>) -> NSRunningApplication? {
+  guard
+    let windowInfo = CGWindowListCopyWindowInfo(
+      [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
+  else {
+    return nil
+  }
+
+  var seen = Set<pid_t>()
+  for window in windowInfo {
+    guard let ownerPID = window[kCGWindowOwnerPID as String] as? pid_t,
+      !processIdentifiers.contains(ownerPID),
+      (window[kCGWindowLayer as String] as? Int ?? 0) == 0,
+      (window[kCGWindowAlpha as String] as? Double ?? 1) > 0,
+      seen.insert(ownerPID).inserted,
+      let application = NSRunningApplication(processIdentifier: ownerPID),
+      application.activationPolicy == .regular,
+      !application.isTerminated,
+      !applicationIsHidden(application)
+    else {
+      continue
+    }
+    return application
+  }
+  return nil
+}
+
 private func dockDisplayIDFromWindowList(_ options: CGWindowListOption) -> UInt32? {
   guard let windowInfo = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]]
   else {
