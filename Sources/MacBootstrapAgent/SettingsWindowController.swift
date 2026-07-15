@@ -15,7 +15,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   private var activeShortcutLabel = ""
   private weak var activeEditingRow: BindingRow?
   private var isEditingHideAll = false
-  private var hideAllBinding = HideAllBinding(shortcut: "", isEnabled: false)
+  private var hideAllBinding = HideAllBinding(shortcut: "")
   private var shortcutCaptureCancel: (() -> Void)?
   private var removalSheet: AgentRemovalSheetController?
   private lazy var loginLaunchSwitch = settingSwitch(action: #selector(toggleLoginLaunch))
@@ -27,7 +27,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   }()
   private lazy var appHotkeysSwitch = settingSwitch(action: #selector(toggleAppHotkeys))
   private let hideAllShortcutField = ShortcutCaptureField(string: "")
-  private lazy var hideAllEnabledSwitch = settingSwitch(action: #selector(toggleHideAllEnabled))
   private lazy var hideAllEditButton = actionButton(
     title: agentText("apps.hideAllSet"), action: #selector(editHideAllShortcut))
   private lazy var hideAllClearButton = iconButton(
@@ -734,22 +733,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     hideAllShortcutField.placeholderString = agentText("apps.editShortcutHint")
     hideAllEditButton.widthAnchor.constraint(equalToConstant: 72).isActive = true
     hideAllClearButton.widthAnchor.constraint(equalToConstant: 40).isActive = true
-    let switchSlot = NSView()
-    switchSlot.widthAnchor.constraint(equalToConstant: 48).isActive = true
-    switchSlot.heightAnchor.constraint(equalToConstant: 32).isActive = true
-    switchSlot.addSubview(hideAllEnabledSwitch)
-    hideAllEnabledSwitch.translatesAutoresizingMaskIntoConstraints = false
-    NSLayoutConstraint.activate([
-      hideAllEnabledSwitch.centerXAnchor.constraint(equalTo: switchSlot.centerXAnchor),
-      hideAllEnabledSwitch.centerYAnchor.constraint(equalTo: switchSlot.centerYAnchor),
-    ])
     let controls = NSStackView(views: [
-      hideAllShortcutField, hideAllEditButton, hideAllClearButton, switchSlot,
+      hideAllShortcutField, hideAllEditButton, hideAllClearButton,
     ])
     controls.orientation = .horizontal
     controls.alignment = .centerY
     controls.spacing = 8
-    controls.widthAnchor.constraint(equalToConstant: 294).isActive = true
+    controls.widthAnchor.constraint(equalToConstant: 238).isActive = true
     configureHideAllControls()
     return controls
   }
@@ -1050,7 +1040,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     clearRows()
     let bindings = (try? config.loadBindings()) ?? []
     hideAllBinding =
-      (try? config.loadHideAllBinding()) ?? HideAllBinding(shortcut: "", isEnabled: false)
+      (try? config.loadHideAllBinding()) ?? HideAllBinding(shortcut: "")
     for binding in bindings {
       appendRow(binding)
     }
@@ -1360,7 +1350,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
       let shortcut = hideAllShortcutField.lastCompleteShortcut.trimmingCharacters(in: .whitespaces)
       guard parseShortcut(shortcut) != nil else { return }
       hideAllBinding.shortcut = shortcut
-      hideAllBinding.isEnabled = true
       isEditingHideAll = false
       endShortcutCapture()
       configureHideAllControls()
@@ -1386,15 +1375,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
       cancelHideAllEditing()
       return
     }
-    hideAllBinding = HideAllBinding(shortcut: "", isEnabled: false)
-    configureHideAllControls()
-    savePressed()
-  }
-
-  @objc private func toggleHideAllEnabled() {
-    hideAllBinding.isEnabled =
-      hideAllEnabledSwitch.state == .on
-      && parseShortcut(hideAllBinding.shortcut) != nil
+    hideAllBinding = HideAllBinding(shortcut: "")
     configureHideAllControls()
     savePressed()
   }
@@ -1432,7 +1413,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     hideAllClearButton.toolTip =
       isEditingHideAll ? agentText("apps.cancel") : agentText("apps.hideAllClear")
     hideAllClearButton.isEnabled = isEditingHideAll || configured
-    hideAllEnabledSwitch.state = hideAllBinding.isEnabled && configured ? .on : .off
   }
 
   private func beginShortcutCapture(
@@ -1525,7 +1505,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     hideAllEditButton.isEnabled = !editing || isEditingHideAll
     hideAllClearButton.isEnabled =
       isEditingHideAll || (!editing && parseShortcut(hideAllBinding.shortcut) != nil)
-    hideAllEnabledSwitch.isEnabled = appHotkeysSwitch.state == .on && !editing
     appAddButton.isEnabled = !editing
     appHotkeysSwitch.isEnabled = !editing
     languagePopup.isEnabled = !editing

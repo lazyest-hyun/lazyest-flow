@@ -312,7 +312,7 @@ final class Agent: NSObject, NSApplicationDelegate {
     }.count
     let hideAllCount =
       ((try? config.loadHideAllBinding()).flatMap { binding in
-        binding.isEnabled && parseShortcut(binding.shortcut) != nil ? 1 : nil
+        parseShortcut(binding.shortcut) != nil ? 1 : nil
       }) ?? 0
     let expectedCount = appBindingCount + hideAllCount
     return hotKeyRefs.count == expectedCount
@@ -338,7 +338,7 @@ final class Agent: NSObject, NSApplicationDelegate {
         register(shortcutText: binding.shortcut, label: binding.label, action: .toggleApp(binding))
       }
       let hideAll = try config.loadHideAllBinding()
-      if hideAll.isEnabled {
+      if parseShortcut(hideAll.shortcut) != nil {
         register(
           shortcutText: hideAll.shortcut,
           label: agentText("apps.hideAll"),

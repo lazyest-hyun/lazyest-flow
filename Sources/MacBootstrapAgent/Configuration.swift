@@ -20,7 +20,6 @@ struct AppBinding {
 
 struct HideAllBinding {
   var shortcut: String
-  var isEnabled: Bool
 }
 
 enum HotkeyAction {
@@ -86,12 +85,9 @@ final class Config {
       guard !line.isEmpty, !line.hasPrefix("#") else { continue }
       let parts = line.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
       guard (2...3).contains(parts.count), parts[0] == "hide-all" else { continue }
-      return HideAllBinding(
-        shortcut: parts[1].trimmingCharacters(in: .whitespaces),
-        isEnabled: parts.count == 3 && (parts[2] == "1" || parts[2].lowercased() == "true")
-      )
+      return HideAllBinding(shortcut: parts[1].trimmingCharacters(in: .whitespaces))
     }
-    return HideAllBinding(shortcut: "", isEnabled: false)
+    return HideAllBinding(shortcut: "")
   }
 
   func saveBindings(_ bindings: [AppBinding], hideAllBinding: HideAllBinding) throws {
@@ -110,14 +106,14 @@ final class Config {
     let header = """
       # MacBootstrapAgent app hotkeys.
       # Format: toggle-app|shortcut|bundle-id|label|enabled
-      # Format: hide-all|shortcut|enabled
+      # Format: hide-all|shortcut
       # Add, remove, or edit rows from the Agent UI.
 
       """
     let appBody = appBindings.map {
       "toggle-app|\($0.shortcut)|\($0.bundleID)|\($0.label)|\($0.isEnabled ? "1" : "0")"
     }
-    let hideAll = "hide-all|\(hideAllBinding.shortcut)|\(hideAllBinding.isEnabled ? "1" : "0")"
+    let hideAll = "hide-all|\(hideAllBinding.shortcut)"
     let body = (appBody + [hideAll]).joined(separator: "\n")
     try (header + body + (body.isEmpty ? "" : "\n")).write(
       toFile: hotkeyPath, atomically: true, encoding: .utf8)
