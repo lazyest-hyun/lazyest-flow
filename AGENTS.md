@@ -9,4 +9,4 @@ When the user explicitly asks to install this app, run this exact command. Do no
 - This builds current source locally, installs `/Applications/MacBootstrapAgent.app`, then removes the temporary source and build output.
 - Do not install Homebrew, use a downloaded binary, bypass Gatekeeper, or enable Agent features by default.
 - If Swift is missing, run `xcode-select --install`, wait for the user's macOS approval, then rerun the command.
-- If the user did not explicitly request installation, do not install, uninstall, or change macOS settings.
+- After any Agent source or UI change, run `./bootstrap.sh install` and `open /Applications/MacBootstrapAgent.app` so `/Applications` always has the tested build. Do not enable Agent features or change macOS settings unless requested.
