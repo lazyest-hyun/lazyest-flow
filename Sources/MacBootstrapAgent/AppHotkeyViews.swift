@@ -101,6 +101,7 @@ final class ShortcutCaptureField: NSTextField {
   var onFocus: (() -> Void)?
   var lastCompleteShortcut = ""
   var isCapturingShortcut = false
+  var hasCapturedCompleteShortcut = false
 
   override var acceptsFirstResponder: Bool { true }
   override var needsPanelToBecomeKey: Bool { true }
@@ -135,7 +136,9 @@ final class ShortcutCaptureField: NSTextField {
       super.flagsChanged(with: event)
       return
     }
-    guard let modifiers = modifierString(from: event), !modifiers.isEmpty else {
+    guard !hasCapturedCompleteShortcut,
+      let modifiers = modifierString(from: event), !modifiers.isEmpty
+    else {
       return
     }
     stringValue = modifiers
@@ -153,6 +156,7 @@ final class ShortcutCaptureField: NSTextField {
     }
     stringValue = shortcut
     lastCompleteShortcut = shortcut
+    hasCapturedCompleteShortcut = true
     needsDisplay = true
     onShortcutCaptured?(shortcut)
     return true

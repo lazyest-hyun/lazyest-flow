@@ -1429,6 +1429,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     endShortcutCapture()
     activeShortcutField = field
     activeShortcutLabel = label
+    field.hasCapturedCompleteShortcut = false
     field.onShortcutCaptured = { [weak field] shortcut in
       field?.stringValue = shortcut
       field?.lastCompleteShortcut = shortcut
@@ -1456,6 +1457,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         return event
       }
       if event.type == .flagsChanged {
+        guard !field.hasCapturedCompleteShortcut else { return nil }
         if let modifiers = modifierString(from: event), !modifiers.isEmpty {
           field.stringValue = modifiers
           field.needsDisplay = true
@@ -1469,6 +1471,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
       guard let shortcut = shortcutString(from: event) else { return nil }
       field.stringValue = shortcut
       field.lastCompleteShortcut = shortcut
+      field.hasCapturedCompleteShortcut = true
       field.needsDisplay = true
       return nil
     }
@@ -1529,6 +1532,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     activeShortcutField?.onShortcutCaptured = nil
     activeShortcutField?.onCancelCapture = nil
     activeShortcutField?.isCapturingShortcut = false
+    activeShortcutField?.hasCapturedCompleteShortcut = false
     activeShortcutField = nil
     activeShortcutLabel = ""
     shortcutCaptureCancel = nil
