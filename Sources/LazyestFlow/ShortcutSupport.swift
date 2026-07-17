@@ -1,7 +1,7 @@
 import AppKit
 import Carbon
 import Foundation
-import MacBootstrapCore
+import LazyestCore
 
 func stableHotkeyID(for shortcut: ParsedShortcut) -> UInt32 {
   var modifierBits: UInt32 = 0
@@ -86,15 +86,15 @@ func keyName(for keyCode: UInt32) -> String? {
 
 func applicationSupportPath(_ fileName: String) -> String {
   let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-    .appendingPathComponent("MacBootstrapAgent", isDirectory: true)
+    .appendingPathComponent("Lazyest Flow", isDirectory: true)
   return base.appendingPathComponent(fileName).path
 }
 
 func defaultHotkeys() -> String {
   """
-  # MacBootstrapAgent app hotkeys.
+  # Lazyest Flow app hotkeys.
   # Format: toggle-app|shortcut|bundle-id|label|enabled
-  # Add, remove, or edit rows from the Agent UI.
+  # Add, remove, or edit rows from the Flow UI.
   """
 }
 
@@ -132,57 +132,6 @@ func currentMacOSScreenshotDir() -> String {
     return NSHomeDirectory() + "/Desktop"
   }
   return NSHomeDirectory() + "/Desktop"
-}
-
-func macOSScreenshotFloatingThumbnailEnabled() -> Bool {
-  let process = Process()
-  let pipe = Pipe()
-  process.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
-  process.arguments = ["read", "com.apple.screencapture", "show-thumbnail"]
-  process.standardOutput = pipe
-  process.standardError = Pipe()
-  do {
-    try process.run()
-    process.waitUntilExit()
-    guard process.terminationStatus == 0 else { return true }
-    let data = pipe.fileHandleForReading.readDataToEndOfFile()
-    let value =
-      String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-      .lowercased() ?? ""
-    return !["0", "false", "no"].contains(value)
-  } catch {
-    return true
-  }
-}
-
-func setMacOSScreenshotFloatingThumbnailEnabled(_ enabled: Bool) -> Bool {
-  let defaults = Process()
-  defaults.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
-  defaults.arguments = [
-    "write", "com.apple.screencapture", "show-thumbnail", "-bool", enabled ? "true" : "false",
-  ]
-  defaults.standardOutput = Pipe()
-  defaults.standardError = Pipe()
-  do {
-    try defaults.run()
-    defaults.waitUntilExit()
-  } catch {
-    return false
-  }
-  guard defaults.terminationStatus == 0 else { return false }
-
-  let refresh = Process()
-  refresh.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
-  refresh.arguments = ["screencaptureui"]
-  refresh.standardOutput = Pipe()
-  refresh.standardError = Pipe()
-  do {
-    try refresh.run()
-    refresh.waitUntilExit()
-  } catch {
-    // The preference is already written; no active UI process is also a valid state.
-  }
-  return true
 }
 
 func setMacOSScreenshotLocation(_ path: String) -> Bool {

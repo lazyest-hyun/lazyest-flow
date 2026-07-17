@@ -1,6 +1,61 @@
 import AppKit
 import Foundation
 
+final class DeviceRoleMenuButton: NSPopUpButton {
+  private let device: InputDeviceDescriptor
+  var onResult: ((Result<Void, Error>) -> Void)?
+
+  init(device: InputDeviceDescriptor) {
+    self.device = device
+    super.init(frame: .zero, pullsDown: true)
+    configureMenu()
+  }
+
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  private func configureMenu() {
+    bezelStyle = .rounded
+    controlSize = .regular
+    toolTip = flowText("devices.role.change")
+    setAccessibilityLabel(flowText("devices.role.change"))
+    widthAnchor.constraint(equalToConstant: 38).isActive = true
+    heightAnchor.constraint(equalToConstant: 30).isActive = true
+
+    let trigger = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    trigger.image = NSImage(
+      systemSymbolName: "slider.horizontal.3",
+      accessibilityDescription: flowText("devices.role.change"))
+    menu?.addItem(trigger)
+
+    let savedRole = InputDeviceInventory.shared.role(for: device)
+    let currentRole: InputDeviceRole = savedRole == .keyboard ? .keyboard : .mouse
+    for role in [InputDeviceRole.mouse, .keyboard] {
+      let item = NSMenuItem(title: role.title, action: nil, keyEquivalent: "")
+      item.representedObject = role.rawValue
+      item.state = currentRole == role ? .on : .off
+      menu?.addItem(item)
+    }
+
+    target = self
+    action = #selector(changeRole)
+  }
+
+  @objc private func changeRole() {
+    defer { selectItem(at: 0) }
+    guard let rawValue = selectedItem?.representedObject as? String,
+      let role = InputDeviceRole(rawValue: rawValue)
+    else { return }
+    do {
+      try InputDeviceInventory.shared.assignRole(role, to: device)
+      onResult?(.success(()))
+    } catch {
+      onResult?(.failure(error))
+    }
+  }
+}
+
 enum MouseDeviceMode: String, Codable, CaseIterable {
   case inherit
   case reversed
@@ -9,11 +64,11 @@ enum MouseDeviceMode: String, Codable, CaseIterable {
   var title: String {
     switch self {
     case .inherit:
-      return agentText("devices.mouse.mode.inherit")
+      return flowText("devices.mouse.mode.inherit")
     case .reversed:
-      return agentText("devices.mouse.mode.reversed")
+      return flowText("devices.mouse.mode.reversed")
     case .system:
-      return agentText("devices.mouse.mode.system")
+      return flowText("devices.mouse.mode.system")
     }
   }
 }
@@ -36,7 +91,7 @@ final class MouseDevicePreferences {
   private init() {
     let directory = FileManager.default.urls(
       for: .applicationSupportDirectory, in: .userDomainMask)[0]
-      .appendingPathComponent("MacBootstrapAgent", isDirectory: true)
+      .appendingPathComponent("Lazyest Flow", isDirectory: true)
     let profileURL = directory.appendingPathComponent("mouse-devices.json")
     url = profileURL
     if let data = try? Data(contentsOf: profileURL),
@@ -107,7 +162,7 @@ final class MouseDevicePreferences {
   }
 }
 
-final class MouseDeviceRowView: NSStackView {
+final class MouseDeviceRowView: AdaptiveCardStackView {
   private let device: InputDeviceDescriptor
   private let preferences: MouseDevicePreferences
   private let modePopup = NSPopUpButton()
@@ -129,12 +184,6 @@ final class MouseDeviceRowView: NSStackView {
     alignment = .centerY
     spacing = 10
     edgeInsets = NSEdgeInsets(top: 7, left: 10, bottom: 7, right: 10)
-    wantsLayer = true
-    layer?.cornerRadius = 8
-    layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.35).cgColor
-    layer?.borderWidth = 1
-    layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.28).cgColor
-
     let icon = NSImageView(
       image: NSImage(systemSymbolName: "computermouse", accessibilityDescription: device.name)
         ?? NSImage())
@@ -176,6 +225,10 @@ final class MouseDeviceRowView: NSStackView {
     modePopup.action = #selector(changeMouseMode)
     modePopup.widthAnchor.constraint(equalToConstant: 190).isActive = true
     addArrangedSubview(modePopup)
+
+    let roleButton = DeviceRoleMenuButton(device: device)
+    roleButton.onResult = { [weak self] result in self?.onResult?(result) }
+    addArrangedSubview(roleButton)
   }
 
   @objc private func changeMouseMode() {
@@ -184,84 +237,6 @@ final class MouseDeviceRowView: NSStackView {
     else { return }
     do {
       try preferences.setMode(mode, for: device)
-      onResult?(.success(()))
-    } catch {
-      onResult?(.failure(error))
-    }
-  }
-}
-
-final class UnclassifiedDeviceRowView: NSStackView {
-  private let device: InputDeviceDescriptor
-  private let rolePopup = NSPopUpButton()
-  var onResult: ((Result<Void, Error>) -> Void)?
-
-  init(device: InputDeviceDescriptor) {
-    self.device = device
-    super.init(frame: .zero)
-    buildUI()
-  }
-
-  required init?(coder: NSCoder) {
-    fatalError("init(coder:) has not been implemented")
-  }
-
-  private func buildUI() {
-    orientation = .horizontal
-    alignment = .centerY
-    spacing = 10
-    edgeInsets = NSEdgeInsets(top: 7, left: 10, bottom: 7, right: 10)
-    wantsLayer = true
-    layer?.cornerRadius = 8
-    layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.35).cgColor
-    layer?.borderWidth = 1
-    layer?.borderColor = NSColor.systemOrange.withAlphaComponent(0.35).cgColor
-
-    let icon = NSImageView(
-      image: NSImage(systemSymbolName: "questionmark.circle", accessibilityDescription: device.name)
-        ?? NSImage())
-    icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 17, weight: .regular)
-    icon.contentTintColor = .systemOrange
-    icon.widthAnchor.constraint(equalToConstant: 26).isActive = true
-    addArrangedSubview(icon)
-
-    let labels = NSStackView()
-    labels.orientation = .vertical
-    labels.alignment = .leading
-    labels.spacing = 2
-    let name = NSTextField(labelWithString: device.name)
-    name.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-    let detail = NSTextField(
-      labelWithString: String(
-        format: "%@ · VID %04X · PID %04X",
-        device.manufacturer,
-        device.vendorID,
-        device.productID
-      ))
-    detail.textColor = .secondaryLabelColor
-    detail.font = NSFont.systemFont(ofSize: 10)
-    labels.addArrangedSubview(name)
-    labels.addArrangedSubview(detail)
-    addArrangedSubview(labels)
-    addArrangedSubview(NSView())
-
-    for role in InputDeviceRole.allCases where role != .ignored {
-      rolePopup.addItem(withTitle: role.title)
-      rolePopup.lastItem?.representedObject = role.rawValue
-    }
-    rolePopup.target = self
-    rolePopup.action = #selector(assignSelectedRole)
-    rolePopup.widthAnchor.constraint(equalToConstant: 170).isActive = true
-    addArrangedSubview(rolePopup)
-  }
-
-  @objc private func assignSelectedRole() {
-    guard let rawValue = rolePopup.selectedItem?.representedObject as? String,
-      let role = InputDeviceRole(rawValue: rawValue),
-      role != .unknown
-    else { return }
-    do {
-      try InputDeviceInventory.shared.assignRole(role, to: device)
       onResult?(.success(()))
     } catch {
       onResult?(.failure(error))

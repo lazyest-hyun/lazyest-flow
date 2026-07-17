@@ -1,11 +1,11 @@
 import Darwin
 import Foundation
-import MacBootstrapCore
+import LazyestCore
 import OSLog
 import Security
 
 private let powerHelperLogger = Logger(
-  subsystem: MacBootstrapPowerHelper.label,
+  subsystem: LazyestPowerHelper.label,
   category: "runtime"
 )
 
@@ -21,7 +21,7 @@ final class PowerHelperListenerDelegate: NSObject, NSXPCListenerDelegate {
       return false
     }
     powerHelperLogger.info("Accepted power helper client")
-    connection.exportedInterface = NSXPCInterface(with: MacBootstrapPowerHelperProtocol.self)
+    connection.exportedInterface = NSXPCInterface(with: LazyestPowerHelperProtocol.self)
     connection.exportedObject = service
     connection.resume()
     return true
@@ -32,16 +32,16 @@ enum PowerHelperConnectionValidator {
   static var runtimeConfigurationIsValid: Bool {
     guard
       currentExecutablePath(processIdentifier: getpid())
-        == MacBootstrapPowerHelper.installedExecutablePath,
-      expectedApplicationPath == MacBootstrapPowerHelper.installedAppPath,
+        == LazyestPowerHelper.installedExecutablePath,
+      expectedApplicationPath == LazyestPowerHelper.installedAppPath,
       expectedUserID != nil,
       let expectedCDHash,
       expectedCDHash.count == 40,
       expectedCDHash.allSatisfy({ $0.isHexDigit }),
-      let applicationCode = staticCode(at: MacBootstrapPowerHelper.installedAppPath),
+      let applicationCode = staticCode(at: LazyestPowerHelper.installedAppPath),
       SecStaticCodeCheckValidity(applicationCode, [], nil) == errSecSuccess,
       signingIdentifier(for: applicationCode)
-        == MacBootstrapPowerHelper.agentBundleIdentifier,
+        == LazyestPowerHelper.agentBundleIdentifier,
       codeHash(for: applicationCode) == expectedCDHash
     else {
       return false
@@ -60,7 +60,7 @@ enum PowerHelperConnectionValidator {
     }
     guard
       currentExecutablePath(processIdentifier: connection.processIdentifier)
-        == MacBootstrapPowerHelper.installedAgentExecutablePath
+        == LazyestPowerHelper.installedFlowExecutablePath
     else {
       powerHelperLogger.error("Client rejected: unexpected executable path")
       return false
@@ -85,7 +85,7 @@ enum PowerHelperConnectionValidator {
     }
     guard
       signingIdentifier(for: guestStaticCode)
-        == MacBootstrapPowerHelper.agentBundleIdentifier
+        == LazyestPowerHelper.agentBundleIdentifier
     else {
       powerHelperLogger.error("Client rejected: bundle identifier mismatch")
       return false
@@ -98,18 +98,18 @@ enum PowerHelperConnectionValidator {
   }
 
   private static var expectedApplicationPath: String? {
-    ProcessInfo.processInfo.environment[MacBootstrapPowerHelper.clientAppPathEnvironment]
+    ProcessInfo.processInfo.environment[LazyestPowerHelper.clientAppPathEnvironment]
   }
 
   private static var expectedCDHash: String? {
-    ProcessInfo.processInfo.environment[MacBootstrapPowerHelper.clientCDHashEnvironment]?
+    ProcessInfo.processInfo.environment[LazyestPowerHelper.clientCDHashEnvironment]?
       .lowercased()
   }
 
   private static var expectedUserID: uid_t? {
     guard
       let value = ProcessInfo.processInfo.environment[
-        MacBootstrapPowerHelper.clientUserIDEnvironment],
+        LazyestPowerHelper.clientUserIDEnvironment],
       let parsed = UInt32(value),
       parsed > 0
     else {
@@ -177,10 +177,10 @@ enum PowerHelperConnectionValidator {
   }
 }
 
-final class PowerHelperService: NSObject, MacBootstrapPowerHelperProtocol {
+final class PowerHelperService: NSObject, LazyestPowerHelperProtocol {
   private let queue = DispatchQueue(label: "com.estaid.mac-bootstrap-agent.power-helper.state")
   private let markerURL = URL(
-    fileURLWithPath: MacBootstrapPowerHelper.ownedSleepMarkerPath)
+    fileURLWithPath: LazyestPowerHelper.ownedSleepMarkerPath)
   private var lastHeartbeat = Date.distantPast
   private var keepAwake = false
   private var ownsSleepDisabled = false
@@ -229,7 +229,7 @@ final class PowerHelperService: NSObject, MacBootstrapPowerHelperProtocol {
   }
 
   func version(withReply reply: @escaping (String) -> Void) {
-    reply(MacBootstrapPowerHelper.protocolVersion)
+    reply(LazyestPowerHelper.protocolVersion)
   }
 
   private func enableSleepDisabled() -> (ok: Bool, error: String?) {
@@ -291,7 +291,7 @@ final class PowerHelperService: NSObject, MacBootstrapPowerHelperProtocol {
     timer.schedule(deadline: .now() + 15, repeating: 15)
     timer.setEventHandler { [weak self] in
       guard let self, self.keepAwake else { return }
-      if Date().timeIntervalSince(self.lastHeartbeat) > MacBootstrapPowerHelper.watchdogTimeout {
+      if Date().timeIntervalSince(self.lastHeartbeat) > LazyestPowerHelper.watchdogTimeout {
         _ = self.disableOwnedSleepDisabled()
       }
     }

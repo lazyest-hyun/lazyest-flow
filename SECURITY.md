@@ -1,6 +1,6 @@
 # Security Policy
 
-MacBootstrapAgent is distributed as source code. Review the checkout before running `bootstrap.sh`; this project does not publish executable downloads or include an automatic updater.
+LazyestFlow is distributed as source code. Review the checkout before running `bootstrap.sh`; this project does not publish executable downloads or include an automatic updater.
 
 ## Reporting
 
@@ -20,7 +20,7 @@ Security-sensitive surfaces include:
 - `pmset disablesleep` ownership, rollback, and watchdog behavior
 - user configuration parsing and runtime state reporting
 
-The privileged helper is installed only after an explicit macOS administrator authorization. Its executable and launchd plist are root-owned at fixed system paths. The plist pins the current `/Applications/MacBootstrapAgent.app` CDHash and console-user UID. Every XPC connection must match that user, path, bundle identifier, valid running code, and pinned hash. This supports local and ad-hoc source builds without trusting an Apple Team ID.
+The privileged helper is installed only after an explicit macOS administrator authorization. Its executable and launchd plist are root-owned at fixed system paths. The plist pins the current `/Applications/Lazyest Flow.app` CDHash and console-user UID. Every XPC connection must match that user, path, bundle identifier, valid running code, and pinned hash. This supports local and ad-hoc source builds without trusting an Apple Team ID.
 
 The helper owns only the `pmset disablesleep` state marked by its root-only ownership file, stores no credentials, and restores normal sleep after a 90-second heartbeat failure. Installation, refresh, and removal accept no user-provided paths or shell fragments.
 

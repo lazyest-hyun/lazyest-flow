@@ -1,9 +1,9 @@
 import AppKit
 import Carbon
 import Foundation
-import MacBootstrapCore
+import LazyestCore
 
-final class Agent: NSObject, NSApplicationDelegate {
+final class Flow: NSObject, NSApplicationDelegate {
   private enum MenuFeature {
     case appHotkeys
     case screenshotClipboard
@@ -106,24 +106,24 @@ final class Agent: NSObject, NSApplicationDelegate {
     item.button?.image = agentMenuBarIcon()
     let menu = NSMenu()
     let settings = NSMenuItem(
-      title: agentText("menu.settings"), action: #selector(openSettingsFromMenu), keyEquivalent: ","
+      title: flowText("menu.settings"), action: #selector(openSettingsFromMenu), keyEquivalent: ","
     )
     let appHotkeys = NSMenuItem(
-      title: agentText("menu.appHotkeys"), action: #selector(toggleAppHotkeysFromMenu),
+      title: flowText("menu.appHotkeys"), action: #selector(toggleAppHotkeysFromMenu),
       keyEquivalent: "")
     let screenshotClipboard = NSMenuItem(
-      title: agentText("menu.screenshotClipboard"),
+      title: flowText("menu.screenshotClipboard"),
       action: #selector(toggleScreenshotClipboardFromMenu), keyEquivalent: "")
     let keepAwake = NSMenuItem(
-      title: agentText("menu.keepAwake"), action: #selector(toggleKeepAwakeFromMenu),
+      title: flowText("menu.keepAwake"), action: #selector(toggleKeepAwakeFromMenu),
       keyEquivalent: "")
     let dockPin = NSMenuItem(
-      title: agentText("menu.dockPin"), action: #selector(toggleDockPinFromMenu),
+      title: flowText("menu.dockPin"), action: #selector(toggleDockPinFromMenu),
       keyEquivalent: "")
     let reload = NSMenuItem(
-      title: agentText("menu.reload"), action: #selector(reloadFromMenu), keyEquivalent: "r")
+      title: flowText("menu.reload"), action: #selector(reloadFromMenu), keyEquivalent: "r")
     let quit = NSMenuItem(
-      title: agentText("menu.quit"), action: #selector(NSApplication.terminate(_:)),
+      title: flowText("menu.quit"), action: #selector(NSApplication.terminate(_:)),
       keyEquivalent: "q")
     for item in [settings, appHotkeys, screenshotClipboard, keepAwake, dockPin, reload] {
       item.target = self
@@ -161,7 +161,7 @@ final class Agent: NSObject, NSApplicationDelegate {
         &hotKeyID
       )
       guard let userData else { return noErr }
-      let agent = Unmanaged<Agent>.fromOpaque(userData).takeUnretainedValue()
+      let agent = Unmanaged<Flow>.fromOpaque(userData).takeUnretainedValue()
       agent.handle(id: hotKeyID.id)
       return noErr
     }
@@ -341,7 +341,7 @@ final class Agent: NSObject, NSApplicationDelegate {
       if parseShortcut(hideAll.shortcut) != nil {
         register(
           shortcutText: hideAll.shortcut,
-          label: agentText("apps.hideAll"),
+          label: flowText("apps.hideAll"),
           action: .hideRegisteredApps
         )
       }

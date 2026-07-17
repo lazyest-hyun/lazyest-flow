@@ -1,6 +1,6 @@
 import AppKit
 import Foundation
-import MacBootstrapCore
+import LazyestCore
 
 enum KeyboardMappingPreset: String, Codable {
   case unchanged
@@ -12,11 +12,11 @@ enum KeyboardMappingPreset: String, Codable {
   var title: String {
     switch self {
     case .unchanged:
-      return agentText("devices.keyboard.preset.none")
+      return flowText("devices.keyboard.preset.none")
     case .windowsToMac:
-      return agentText("devices.keyboard.preset.mac")
+      return flowText("devices.keyboard.preset.mac")
     case .legacyDirectF18:
-      return agentText("devices.keyboard.preset.mac")
+      return flowText("devices.keyboard.preset.mac")
     }
   }
 }
@@ -35,7 +35,7 @@ private final class KeyboardProfileStore {
   init() {
     let directory = FileManager.default.urls(
       for: .applicationSupportDirectory, in: .userDomainMask)[0]
-      .appendingPathComponent("MacBootstrapAgent", isDirectory: true)
+      .appendingPathComponent("Lazyest Flow", isDirectory: true)
     url = directory.appendingPathComponent("input-devices.json")
   }
 
@@ -95,11 +95,11 @@ enum KeyboardMappingError: LocalizedError {
   var errorDescription: String? {
     switch self {
     case .karabinerMissing:
-      return agentText("devices.keyboard.error.karabiner")
+      return flowText("devices.keyboard.error.karabiner")
     case .configMissing:
-      return agentText("devices.keyboard.error.config")
+      return flowText("devices.keyboard.error.config")
     case .verificationFailed:
-      return agentText("devices.keyboard.error.verify")
+      return flowText("devices.keyboard.error.verify")
     }
   }
 }
@@ -238,7 +238,7 @@ final class KeyboardMappingController {
   }
 }
 
-final class KeyboardDeviceRowView: NSStackView {
+final class KeyboardDeviceRowView: AdaptiveCardStackView {
   let device: InputDeviceDescriptor
   private let controller: KeyboardMappingController
   private let presetPopup = NSPopUpButton()
@@ -263,12 +263,6 @@ final class KeyboardDeviceRowView: NSStackView {
     alignment = .centerY
     spacing = 10
     edgeInsets = NSEdgeInsets(top: 7, left: 10, bottom: 7, right: 10)
-    wantsLayer = true
-    layer?.cornerRadius = 8
-    layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.35).cgColor
-    layer?.borderWidth = 1
-    layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.28).cgColor
-
     let icon = NSImageView(
       image: NSImage(systemSymbolName: "keyboard", accessibilityDescription: device.name)
         ?? NSImage())
@@ -318,6 +312,10 @@ final class KeyboardDeviceRowView: NSStackView {
     actionButton.widthAnchor.constraint(equalToConstant: 72).isActive = true
     actionButton.heightAnchor.constraint(equalToConstant: 30).isActive = true
     addArrangedSubview(actionButton)
+
+    let roleButton = DeviceRoleMenuButton(device: device)
+    roleButton.onResult = { [weak self] result in self?.onResult?(result) }
+    addArrangedSubview(roleButton)
   }
 
   private var selectedPreset: KeyboardMappingPreset {
@@ -348,17 +346,17 @@ final class KeyboardDeviceRowView: NSStackView {
   private func refreshControls(saved: KeyboardMappingPreset?) {
     let selected = selectedPreset
     if let saved {
-      statusLabel.stringValue = agentText("devices.keyboard.status.applied")
+      statusLabel.stringValue = flowText("devices.keyboard.status.applied")
       statusLabel.textColor = .systemGreen
       actionButton.title =
         selected == .unchanged || selected == saved
-        ? agentText("devices.keyboard.reset")
-        : agentText("devices.keyboard.apply")
+        ? flowText("devices.keyboard.reset")
+        : flowText("devices.keyboard.apply")
       actionButton.isEnabled = true
     } else {
-      statusLabel.stringValue = agentText("devices.keyboard.status.none")
+      statusLabel.stringValue = flowText("devices.keyboard.status.none")
       statusLabel.textColor = .secondaryLabelColor
-      actionButton.title = agentText("devices.keyboard.apply")
+      actionButton.title = flowText("devices.keyboard.apply")
       actionButton.isEnabled = selected != .unchanged
     }
   }
@@ -376,7 +374,7 @@ final class KeyboardDeviceRowView: NSStackView {
       refreshControls(saved: controller.savedPreset(for: device))
       onResult?(.success(()))
     } catch {
-      statusLabel.stringValue = agentText("status.failed")
+      statusLabel.stringValue = flowText("status.failed")
       statusLabel.textColor = .systemRed
       onResult?(.failure(error))
     }

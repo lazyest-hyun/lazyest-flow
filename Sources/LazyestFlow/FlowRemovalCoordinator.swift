@@ -1,16 +1,16 @@
 import AppKit
 import Foundation
 
-struct AgentRemovalOptions {
+struct FlowRemovalOptions {
   let removeSettings: Bool
   let resetDockTiming: Bool
   let resetScreenshotLocation: Bool
   let resetKeyboardMappings: Bool
 }
 
-enum AgentRemovalCoordinator {
+enum FlowRemovalCoordinator {
   static func remove(
-    options: AgentRemovalOptions,
+    options: FlowRemovalOptions,
     completion: @escaping (Result<Void, Error>) -> Void
   ) {
     do {
@@ -55,13 +55,13 @@ enum AgentRemovalCoordinator {
   }
 
   private static func scheduleRemovalAfterTermination(removeSettings: Bool) throws {
-    let appURL = URL(fileURLWithPath: "/Applications/MacBootstrapAgent.app").standardizedFileURL
+    let appURL = URL(fileURLWithPath: "/Applications/Lazyest Flow.app").standardizedFileURL
     guard Bundle.main.bundleURL.standardizedFileURL == appURL else {
       throw RemovalError.unexpectedApplicationPath(Bundle.main.bundleURL.path)
     }
     let supportURL = FileManager.default.urls(
       for: .applicationSupportDirectory, in: .userDomainMask)[0]
-      .appendingPathComponent("MacBootstrapAgent", isDirectory: true)
+      .appendingPathComponent("Lazyest Flow", isDirectory: true)
     var paths = [appURL.path]
     if removeSettings {
       paths.append(supportURL.path)

@@ -3,35 +3,35 @@
 import PackageDescription
 
 let package = Package(
-  name: "MacBootstrapAgent",
+  name: "LazyestFlow",
   platforms: [
     .macOS(.v13)
   ],
   products: [
-    .executable(name: "MacBootstrapAgent", targets: ["MacBootstrapAgent"]),
-    .executable(name: "MacBootstrapPowerHelper", targets: ["MacBootstrapPowerHelper"]),
-    .executable(name: "MacBootstrapCoreChecks", targets: ["MacBootstrapCoreChecks"]),
+    .executable(name: "LazyestFlow", targets: ["LazyestFlow"]),
+    .executable(name: "LazyestPowerHelper", targets: ["LazyestPowerHelper"]),
+    .executable(name: "LazyestCoreChecks", targets: ["LazyestCoreChecks"]),
   ],
   targets: [
-    .target(name: "MacBootstrapCore"),
-    .executableTarget(name: "MacBootstrapAgent", dependencies: ["MacBootstrapCore"]),
+    .target(name: "LazyestCore"),
+    .executableTarget(name: "LazyestFlow", dependencies: ["LazyestCore"]),
     .executableTarget(
-      name: "MacBootstrapPowerHelper",
-      dependencies: ["MacBootstrapCore"],
+      name: "LazyestPowerHelper",
+      dependencies: ["LazyestCore"],
       exclude: ["Info.plist"],
       linkerSettings: [
         .unsafeFlags([
           "-Xlinker", "-sectcreate",
           "-Xlinker", "__TEXT",
           "-Xlinker", "__info_plist",
-          "-Xlinker", "Sources/MacBootstrapPowerHelper/Info.plist",
+          "-Xlinker", "Sources/LazyestPowerHelper/Info.plist",
         ])
       ]
     ),
     .executableTarget(
-      name: "MacBootstrapCoreChecks",
-      dependencies: ["MacBootstrapCore"],
-      path: "Checks/MacBootstrapCoreChecks"
+      name: "LazyestCoreChecks",
+      dependencies: ["LazyestCore"],
+      path: "Checks/LazyestCoreChecks"
     ),
   ]
 )

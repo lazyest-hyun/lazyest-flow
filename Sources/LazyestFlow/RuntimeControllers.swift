@@ -5,7 +5,7 @@ import Darwin
 import Foundation
 import IOKit.pwr_mgt
 import ImageIO
-import MacBootstrapCore
+import LazyestCore
 
 final class DockPinController {
   private struct DisplayInfo {
@@ -594,6 +594,11 @@ final class DockPinController {
 }
 
 final class ScreenshotWatcher {
+  private enum InteractiveCaptureMode {
+    case selection
+    case window
+  }
+
   private struct ImageFile {
     let path: String
     let modificationDate: Date
@@ -624,6 +629,7 @@ final class ScreenshotWatcher {
 
   private let config: Config
   private var timer: Timer?
+  private var shortcutTap: EventTapHost?
   private var directorySource: DispatchSourceFileSystemObject?
   private var scheduledScan: DispatchWorkItem?
   private var scheduledRetry: DispatchWorkItem?
@@ -633,6 +639,10 @@ final class ScreenshotWatcher {
   private var isRunning = false
   private var monitoringGeneration: UInt64 = 0
   private var monitoringStartedAt = Date.distantFuture
+  private var interactiveCaptureMode: InteractiveCaptureMode?
+  private var selectionStart: CGPoint?
+  private var selectedWindowID: CGWindowID?
+  private var immediatelyCopiedCaptures: [Date] = []
   private let imageExtensions = Set(["png", "jpg", "jpeg", "tif", "tiff", "heic"])
   private let maxRetryCount = 50
   private let trackedFileLifetime: TimeInterval = 120
@@ -651,6 +661,8 @@ final class ScreenshotWatcher {
     monitoringStartedAt = Date()
     seenPaths.removeAll(keepingCapacity: true)
     pendingPaths.removeAll(keepingCapacity: true)
+    immediatelyCopiedCaptures.removeAll(keepingCapacity: true)
+    startShortcutMonitor()
     startDirectoryMonitor()
     scan()
 
@@ -668,6 +680,11 @@ final class ScreenshotWatcher {
     isScanning = false
     timer?.invalidate()
     timer = nil
+    shortcutTap?.stop()
+    shortcutTap = nil
+    interactiveCaptureMode = nil
+    selectionStart = nil
+    selectedWindowID = nil
     scheduledScan?.cancel()
     scheduledScan = nil
     scheduledRetry?.cancel()
@@ -676,6 +693,7 @@ final class ScreenshotWatcher {
     directorySource = nil
     seenPaths.removeAll(keepingCapacity: true)
     pendingPaths.removeAll()
+    immediatelyCopiedCaptures.removeAll()
   }
 
   func reload() {
@@ -716,6 +734,13 @@ final class ScreenshotWatcher {
         }
 
         let now = Date()
+        if self.consumeImmediateCopy(matching: nextFile.modificationDate, now: now) {
+          self.seenPaths.insert(nextFile.path)
+          self.pendingPaths.removeValue(forKey: nextFile.path)
+          self.isScanning = false
+          self.scheduleScan(after: 0.01)
+          return
+        }
         if let pending = self.pendingPaths[nextFile.path], pending.nextRetryAt > now {
           self.isScanning = false
           self.scheduleScan(after: pending.nextRetryAt.timeIntervalSince(now))
@@ -725,6 +750,172 @@ final class ScreenshotWatcher {
         self.prepareImageForClipboard(path: nextFile.path, generation: generation)
       }
     }
+  }
+
+  private func startShortcutMonitor() {
+    let eventTypes: [CGEventType] = [.keyDown, .leftMouseDown, .leftMouseUp]
+    let mask = eventTypes.reduce(CGEventMask(0)) { partial, type in
+      partial | CGEventMask(1 << type.rawValue)
+    }
+    let tap = EventTapHost(eventMask: mask) { [weak self] type, event in
+      self?.handleScreenshotShortcutEvent(type: type, event: event)
+      return Unmanaged.passUnretained(event)
+    }
+    guard tap.start() else { return }
+    shortcutTap = tap
+  }
+
+  private func handleScreenshotShortcutEvent(type: CGEventType, event: CGEvent) {
+    switch type {
+    case .keyDown:
+      handleScreenshotKeyDown(event)
+    case .leftMouseDown:
+      guard let mode = interactiveCaptureMode else { return }
+      if mode == .window {
+        selectedWindowID = windowID(at: event.location)
+      } else {
+        selectionStart = event.location
+      }
+    case .leftMouseUp:
+      completeInteractiveCapture(at: event.location)
+    default:
+      break
+    }
+  }
+
+  private func handleScreenshotKeyDown(_ event: CGEvent) {
+    let keyCode = Int(event.getIntegerValueField(.keyboardEventKeycode))
+    let flags = event.flags
+    let isScreenshotShortcut = flags.contains(.maskCommand) && flags.contains(.maskShift)
+
+    if isScreenshotShortcut, !flags.contains(.maskControl), keyCode == 20 {
+      NSLog("LazyestFlow screenshot: fullscreen shortcut")
+      resetInteractiveCapture()
+      captureToClipboard(arguments: [])
+      return
+    }
+    if isScreenshotShortcut, !flags.contains(.maskControl), keyCode == 21 {
+      NSLog("LazyestFlow screenshot: selection shortcut")
+      interactiveCaptureMode = .selection
+      selectionStart = nil
+      selectedWindowID = nil
+      return
+    }
+
+    guard interactiveCaptureMode != nil else { return }
+    switch keyCode {
+    case 49:
+      interactiveCaptureMode = interactiveCaptureMode == .selection ? .window : .selection
+      selectionStart = nil
+      selectedWindowID = nil
+    case 53:
+      resetInteractiveCapture()
+    default:
+      break
+    }
+  }
+
+  private func completeInteractiveCapture(at end: CGPoint) {
+    guard let mode = interactiveCaptureMode else { return }
+    let start = selectionStart
+    let windowID = selectedWindowID
+    resetInteractiveCapture()
+
+    let arguments: [String]
+    switch mode {
+    case .selection:
+      guard let start else { return }
+      let rect = CGRect(
+        x: min(start.x, end.x),
+        y: min(start.y, end.y),
+        width: abs(end.x - start.x),
+        height: abs(end.y - start.y)
+      ).integral
+      guard rect.width >= 2, rect.height >= 2 else { return }
+      arguments = ["-R", rectangleArgument(rect)]
+      NSLog("LazyestFlow screenshot: selection complete %@", rectangleArgument(rect))
+    case .window:
+      guard let windowID else { return }
+      arguments = ["-l", String(windowID)]
+    }
+
+    // Let the system selection overlay disappear while its normal save/thumbnail path continues.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in
+      self?.captureToClipboard(arguments: arguments)
+    }
+  }
+
+  private func captureToClipboard(arguments: [String]) {
+    guard isRunning, config.screenshotClipboardWatch else { return }
+    let pasteboardChangeCount = NSPasteboard.general.changeCount
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+    process.arguments = ["-c", "-x"] + arguments
+    process.standardOutput = Pipe()
+    process.standardError = Pipe()
+    process.terminationHandler = { [weak self] process in
+      NSLog("LazyestFlow screenshot: helper exit %d", process.terminationStatus)
+      guard process.terminationStatus == 0 else { return }
+      DispatchQueue.main.async {
+        guard let self, self.isRunning,
+          NSPasteboard.general.changeCount != pasteboardChangeCount
+        else { return }
+        self.immediatelyCopiedCaptures.append(Date())
+      }
+    }
+    do {
+      try process.run()
+    } catch {
+      // The directory watcher remains as a delayed fallback.
+    }
+  }
+
+  private func rectangleArgument(_ rect: CGRect) -> String {
+    "\(Int(rect.origin.x)),\(Int(rect.origin.y)),\(Int(rect.width)),\(Int(rect.height))"
+  }
+
+  private func resetInteractiveCapture() {
+    interactiveCaptureMode = nil
+    selectionStart = nil
+    selectedWindowID = nil
+  }
+
+  private func windowID(at point: CGPoint) -> CGWindowID? {
+    guard
+      let windows = CGWindowListCopyWindowInfo(
+        [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID
+      ) as? [[CFString: Any]]
+    else { return nil }
+
+    let ignoredOwners = Set([
+      "LazyestFlow", "Screenshot", "Window Server", "Dock", "Control Center",
+    ])
+    for window in windows {
+      guard let layer = window[kCGWindowLayer] as? NSNumber, layer.intValue == 0,
+        let owner = window[kCGWindowOwnerName] as? String, !ignoredOwners.contains(owner),
+        let bounds = window[kCGWindowBounds] as? NSDictionary,
+        let windowID = window[kCGWindowNumber] as? NSNumber
+      else { continue }
+      var rect = CGRect.zero
+      guard CGRectMakeWithDictionaryRepresentation(bounds as CFDictionary, &rect),
+        rect.contains(point)
+      else {
+        continue
+      }
+      return CGWindowID(windowID.uint32Value)
+    }
+    return nil
+  }
+
+  private func consumeImmediateCopy(matching modificationDate: Date, now: Date) -> Bool {
+    immediatelyCopiedCaptures.removeAll { now.timeIntervalSince($0) > 20 }
+    guard
+      let index = immediatelyCopiedCaptures.firstIndex(where: {
+        abs(modificationDate.timeIntervalSince($0)) <= 15
+      })
+    else { return false }
+    immediatelyCopiedCaptures.remove(at: index)
+    return true
   }
 
   private func prepareImageForClipboard(path: String, generation: UInt64) {

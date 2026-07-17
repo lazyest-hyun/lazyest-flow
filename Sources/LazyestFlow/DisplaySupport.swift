@@ -171,6 +171,6 @@ func agentMenuBarIcon() -> NSImage {
 
   image.unlockFocus()
   image.isTemplate = true
-  image.accessibilityDescription = "MacBootstrapAgent"
+  image.accessibilityDescription = "Lazyest Flow"
   return image
 }

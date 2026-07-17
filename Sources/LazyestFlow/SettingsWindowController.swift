@@ -8,7 +8,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   private let keepAwakeStatusProvider: () -> KeepAwakeStatus
   private var rows: [BindingRow] = []
   private let bindingsStack = NSStackView()
-  private let appsHintLabel = NSTextField(labelWithString: agentText("apps.hint"))
+  private let appsHintLabel = NSTextField(labelWithString: flowText("apps.hint"))
   private var screenshotDirectoryPath = ""
   private var shortcutCaptureMonitor: Any?
   private weak var activeShortcutField: ShortcutCaptureField?
@@ -17,37 +17,37 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   private var isEditingHideAll = false
   private var hideAllBinding = HideAllBinding(shortcut: "")
   private var shortcutCaptureCancel: (() -> Void)?
-  private var removalSheet: AgentRemovalSheetController?
+  private var removalSheet: FlowRemovalSheetController?
   private lazy var loginLaunchSwitch = settingSwitch(action: #selector(toggleLoginLaunch))
   private let loginLaunchStatusLabel = NSTextField(labelWithString: "")
   private lazy var removeAgentButton: NSButton = {
-    let button = actionButton(title: agentText("general.remove"), action: #selector(removeAgent))
+    let button = actionButton(title: flowText("general.remove"), action: #selector(removeAgent))
     button.contentTintColor = .systemRed
     return button
   }()
   private lazy var appHotkeysSwitch = settingSwitch(action: #selector(toggleAppHotkeys))
   private let hideAllShortcutField = ShortcutCaptureField(string: "")
   private lazy var hideAllEditButton = actionButton(
-    title: agentText("apps.hideAllSet"), action: #selector(editHideAllShortcut))
+    title: flowText("apps.hideAllSet"), action: #selector(editHideAllShortcut))
   private lazy var hideAllClearButton = iconButton(
-    symbolName: "xmark", tooltip: agentText("apps.hideAllClear"),
+    symbolName: "xmark", tooltip: flowText("apps.hideAllClear"),
     action: #selector(clearHideAllShortcut))
   private lazy var mouseScrollReverseSwitch = settingSwitch(
     action: #selector(toggleMouseScrollReverse))
   private lazy var mousePermissionButton = actionButton(
-    title: agentText("dock.permission"), action: #selector(openAccessibilitySettings))
+    title: flowText("dock.permission"), action: #selector(openAccessibilitySettings))
   private lazy var screenshotFolderButton = pathButton(action: #selector(openScreenshotDirectory))
   private lazy var screenshotWatchSwitch = settingSwitch(action: #selector(toggleScreenshotWatch))
   private lazy var keepAwakeSwitch = settingSwitch(action: #selector(toggleKeepAwake))
   private lazy var keepAwakeApprovalButton: NSButton = {
     let button = actionButton(
-      title: agentText("keep.approve"), action: #selector(requestKeepAwakeAuthorization))
+      title: flowText("keep.approve"), action: #selector(requestKeepAwakeAuthorization))
     button.widthAnchor.constraint(equalToConstant: 104).isActive = true
     return button
   }()
   private lazy var keepAwakePowerScopeControl: NSSegmentedControl = {
     let control = NSSegmentedControl(
-      labels: [agentText("keep.powerOnly"), agentText("keep.includeBattery")],
+      labels: [flowText("keep.powerOnly"), flowText("keep.includeBattery")],
       trackingMode: .selectOne,
       target: self,
       action: #selector(changeKeepAwakePowerScope)
@@ -62,11 +62,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   private lazy var dockPinSwitch = settingSwitch(action: #selector(toggleDockPin))
   private lazy var dockTimingSwitch = settingSwitch(action: #selector(toggleDockTiming))
   private lazy var dockPermissionButton = actionButton(
-    title: agentText("dock.permission"), action: #selector(openAccessibilitySettings))
+    title: flowText("dock.permission"), action: #selector(openAccessibilitySettings))
   private lazy var appAddButton = actionButton(
-    title: agentText("apps.addRunning"), action: #selector(addRunningApp))
+    title: flowText("apps.addRunning"), action: #selector(addRunningApp))
   private lazy var footerReloadButton = iconButton(
-    symbolName: "arrow.clockwise", tooltip: agentText("footer.reload"),
+    symbolName: "arrow.clockwise", tooltip: flowText("footer.reload"),
     action: #selector(reloadPressed))
   private let languagePopup = NSPopUpButton()
   private let settingsTabs = NSTabView()
@@ -77,8 +77,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   private let mouseScrollStatusLabel = NSTextField(labelWithString: "")
   private let mouseDevicesStack = NSStackView()
   private let keyboardDevicesStack = NSStackView()
-  private let unclassifiedDevicesStack = NSStackView()
-  private weak var unclassifiedSection: NSStackView?
   private let statusLabel = NSTextField(labelWithString: "")
   private var observers: [NSObjectProtocol] = []
   var onSave: (() -> Void)?
@@ -102,7 +100,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
       backing: .buffered,
       defer: false
     )
-    window.title = agentText("title")
+    window.title = flowText("title")
     window.isReleasedWhenClosed = false
     window.minSize = NSSize(width: 760, height: 500)
     super.init(window: window)
@@ -129,7 +127,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
       ) { [weak self] _ in
         self?.refreshMouseDevices()
         self?.refreshKeyboardDevices()
-        self?.refreshUnclassifiedDevices()
       },
       NotificationCenter.default.addObserver(
         forName: NSWindow.didResignKeyNotification, object: window, queue: .main
@@ -181,12 +178,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     tabBar.distribution = .fillEqually
     tabBar.spacing = 4
     let tabDefinitions = [
-      (agentText("tab.general"), "gearshape"),
-      (agentText("tab.apps"), "keyboard"),
-      (agentText("tab.inputDevices"), "computermouse"),
-      (agentText("tab.screenshots"), "camera.viewfinder"),
-      (agentText("tab.keepAwake"), "moon.zzz"),
-      (agentText("tab.dockPin"), "dock.rectangle"),
+      (flowText("tab.general"), "gearshape"),
+      (flowText("tab.apps"), "keyboard"),
+      (flowText("tab.inputDevices"), "computermouse"),
+      (flowText("tab.screenshots"), "camera.viewfinder"),
+      (flowText("tab.keepAwake"), "moon.zzz"),
+      (flowText("tab.dockPin"), "dock.rectangle"),
     ]
     for (index, definition) in tabDefinitions.enumerated() {
       let button = SettingsTabButton(title: definition.0, symbolName: definition.1)
@@ -231,15 +228,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   private func configureLanguagePopup() {
     languagePopup.removeAllItems()
     let options: [(String, String)] = [
-      (agentText("language.auto"), AgentLanguage.automatic.rawValue),
-      (agentText("language.korean"), AgentLanguage.korean.rawValue),
-      (agentText("language.english"), AgentLanguage.english.rawValue),
+      (flowText("language.auto"), FlowLanguage.automatic.rawValue),
+      (flowText("language.korean"), FlowLanguage.korean.rawValue),
+      (flowText("language.english"), FlowLanguage.english.rawValue),
     ]
     for option in options {
       languagePopup.addItem(withTitle: option.0)
       languagePopup.lastItem?.representedObject = option.1
     }
-    let savedCode = agentSavedLanguageCode()
+    let savedCode = flowSavedLanguageCode()
     if let index = languagePopup.itemArray.firstIndex(where: {
       ($0.representedObject as? String) == savedCode
     }) {
@@ -252,10 +249,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   @objc private func changeLanguage() {
     guard let code = languagePopup.selectedItem?.representedObject as? String else { return }
     do {
-      try saveAgentLanguageCode(code)
+      try saveFlowLanguageCode(code)
       onLanguageChange?()
     } catch {
-      statusLabel.stringValue = "\(agentText("status.failed")): \(error.localizedDescription)"
+      statusLabel.stringValue = "\(flowText("status.failed")): \(error.localizedDescription)"
     }
   }
 
@@ -308,7 +305,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     button.contentTintColor = .linkColor
     button.font = NSFont.systemFont(ofSize: 12)
     button.lineBreakMode = .byTruncatingMiddle
-    button.toolTip = agentText("screenshots.open")
+    button.toolTip = flowText("screenshots.open")
     return button
   }
 
@@ -381,17 +378,33 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     return box
   }
 
+  private func scrollableTabView(content: NSView) -> NSScrollView {
+    let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 760, height: 400))
+    scrollView.hasVerticalScroller = true
+    scrollView.autohidesScrollers = true
+    scrollView.drawsBackground = false
+
+    let documentView = FlippedDocumentView()
+    documentView.translatesAutoresizingMaskIntoConstraints = false
+    content.translatesAutoresizingMaskIntoConstraints = false
+    documentView.addSubview(content)
+    scrollView.documentView = documentView
+    NSLayoutConstraint.activate([
+      content.leadingAnchor.constraint(equalTo: documentView.leadingAnchor),
+      content.trailingAnchor.constraint(equalTo: documentView.trailingAnchor),
+      content.topAnchor.constraint(equalTo: documentView.topAnchor),
+      content.bottomAnchor.constraint(equalTo: documentView.bottomAnchor),
+      documentView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor),
+    ])
+    return scrollView
+  }
+
   private func rowContainer(compact: Bool = false) -> NSStackView {
-    let view = NSStackView()
+    let view = AdaptiveCardStackView()
     view.orientation = .horizontal
     view.spacing = 8
     let verticalInset: CGFloat = compact ? 5 : 7
     view.edgeInsets = NSEdgeInsets(top: verticalInset, left: 10, bottom: verticalInset, right: 10)
-    view.wantsLayer = true
-    view.layer?.cornerRadius = 8
-    view.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.35).cgColor
-    view.layer?.borderWidth = 1
-    view.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.28).cgColor
     return view
   }
 
@@ -400,22 +413,22 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
       mouseScrollReverseSwitch.state == .on || MouseDevicePreferences.shared.hasReversedOverride
     let status: String
     if !enabled {
-      status = agentText("devices.mouse.status.off")
+      status = flowText("devices.mouse.status.off")
     } else if let override {
       status = override
     } else if !AXIsProcessTrusted() {
-      status = agentText("devices.mouse.status.needsPermission")
+      status = flowText("devices.mouse.status.needsPermission")
     } else {
-      status = agentText("devices.mouse.status.active")
+      status = flowText("devices.mouse.status.active")
     }
     mouseScrollStatusLabel.stringValue = status
-    let isActive = status == agentText("devices.mouse.status.active")
-    let isOff = status == agentText("devices.mouse.status.off")
+    let isActive = status == flowText("devices.mouse.status.active")
+    let isOff = status == flowText("devices.mouse.status.off")
     let tint: NSColor = isActive ? .systemGreen : (isOff ? .secondaryLabelColor : .systemOrange)
     mouseScrollStatusLabel.textColor = tint
     mouseScrollStatusLabel.layer?.backgroundColor =
       tint.withAlphaComponent(isOff ? 0.08 : 0.13).cgColor
-    mousePermissionButton.isHidden = status != agentText("devices.mouse.status.needsPermission")
+    mousePermissionButton.isHidden = status != flowText("devices.mouse.status.needsPermission")
   }
 
   private func refreshMouseDevices() {
@@ -425,7 +438,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
     let devices = InputDeviceInventory.shared.externalMice()
     if devices.isEmpty {
-      let empty = NSTextField(wrappingLabelWithString: agentText("devices.mouse.identify"))
+      let empty = NSTextField(wrappingLabelWithString: flowText("devices.mouse.identify"))
       empty.textColor = .secondaryLabelColor
       empty.font = NSFont.systemFont(ofSize: 11)
       empty.alignment = .left
@@ -437,12 +450,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
       row.onResult = { [weak self] result in
         switch result {
         case .success:
-          self?.statusLabel.stringValue = agentText("status.saved")
+          self?.statusLabel.stringValue = flowText("status.saved")
           self?.onSave?()
           self?.refreshMouseScrollUI()
         case .failure(let error):
           self?.statusLabel.stringValue =
-            "\(agentText("status.failed")): \(error.localizedDescription)"
+            "\(flowText("status.failed")): \(error.localizedDescription)"
         }
       }
       mouseDevicesStack.addArrangedSubview(row)
@@ -457,7 +470,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
     let devices = InputDeviceInventory.shared.externalKeyboards()
     guard !devices.isEmpty else {
-      let empty = NSTextField(wrappingLabelWithString: agentText("devices.keyboard.empty"))
+      let empty = NSTextField(wrappingLabelWithString: flowText("devices.keyboard.empty"))
       empty.textColor = .secondaryLabelColor
       empty.font = NSFont.systemFont(ofSize: 12)
       empty.alignment = .left
@@ -469,37 +482,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
       row.onResult = { [weak self] result in
         switch result {
         case .success:
-          self?.statusLabel.stringValue = agentText("status.saved")
+          self?.statusLabel.stringValue = flowText("status.saved")
         case .failure(let error):
           self?.statusLabel.stringValue =
-            "\(agentText("status.failed")): \(error.localizedDescription)"
+            "\(flowText("status.failed")): \(error.localizedDescription)"
         }
       }
       keyboardDevicesStack.addArrangedSubview(row)
       row.widthAnchor.constraint(equalTo: keyboardDevicesStack.widthAnchor).isActive = true
-    }
-  }
-
-  private func refreshUnclassifiedDevices() {
-    for view in unclassifiedDevicesStack.arrangedSubviews {
-      unclassifiedDevicesStack.removeArrangedSubview(view)
-      view.removeFromSuperview()
-    }
-    let devices = InputDeviceInventory.shared.unclassifiedDevices()
-    unclassifiedSection?.isHidden = devices.isEmpty
-    for device in devices {
-      let row = UnclassifiedDeviceRowView(device: device)
-      row.onResult = { [weak self] result in
-        switch result {
-        case .success:
-          self?.statusLabel.stringValue = agentText("status.saved")
-        case .failure(let error):
-          self?.statusLabel.stringValue =
-            "\(agentText("status.failed")): \(error.localizedDescription)"
-        }
-      }
-      unclassifiedDevicesStack.addArrangedSubview(row)
-      row.widthAnchor.constraint(equalTo: unclassifiedDevicesStack.widthAnchor).isActive = true
     }
   }
 
@@ -544,7 +534,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
       statusKey = "dock.timing.custom"
       tint = .systemOrange
     }
-    dockTimingStatusLabel.stringValue = agentText(statusKey)
+    dockTimingStatusLabel.stringValue = flowText(statusKey)
     dockTimingStatusLabel.textColor = tint
     dockTimingStatusLabel.layer?.backgroundColor = tint.withAlphaComponent(0.1).cgColor
   }
@@ -568,28 +558,28 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     let tint: NSColor
     switch resolvedStatus {
     case .off:
-      statusText = agentText("keep.status.off")
+      statusText = flowText("keep.status.off")
       tint = .secondaryLabelColor
     case .activating:
-      statusText = agentText("keep.status.activating")
+      statusText = flowText("keep.status.activating")
       tint = .systemOrange
     case .active:
-      statusText = agentText("keep.status.active")
+      statusText = flowText("keep.status.active")
       tint = .systemGreen
     case .waitingForPower:
-      statusText = agentText("keep.status.waitingPower")
+      statusText = flowText("keep.status.waitingPower")
       tint = .systemOrange
     case .lowBattery:
-      statusText = agentText("keep.status.lowBattery")
+      statusText = flowText("keep.status.lowBattery")
       tint = .systemOrange
     case .thermalSafety:
-      statusText = agentText("keep.status.thermal")
+      statusText = flowText("keep.status.thermal")
       tint = .systemOrange
     case .helperApprovalRequired:
-      statusText = agentText("keep.status.helperApproval")
+      statusText = flowText("keep.status.helperApproval")
       tint = .systemOrange
     case .helperUnavailable:
-      statusText = agentText("keep.status.helperUnavailable")
+      statusText = flowText("keep.status.helperUnavailable")
       tint = .systemOrange
     }
     keepAwakeStatusLabel.stringValue = "\(statusText) · \(powerText)"
@@ -599,12 +589,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
   private func keepAwakePowerText(_ power: PowerSnapshot) -> String {
     if power.onACPower {
-      return agentText("keep.power.ac")
+      return flowText("keep.power.ac")
     }
     if let percent = power.batteryPercent {
-      return String(format: agentText("keep.power.batteryPercent"), percent)
+      return String(format: flowText("keep.power.batteryPercent"), percent)
     }
-    return agentText("keep.power.battery")
+    return flowText("keep.power.battery")
   }
 
   private func dockPinResolvedStatus(
@@ -644,7 +634,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
   private func appBindingsTab() -> NSTabViewItem {
     let item = NSTabViewItem(identifier: "apps")
-    item.label = agentText("tab.apps")
+    item.label = flowText("tab.apps")
     let root = NSStackView()
     root.frame = NSRect(x: 0, y: 0, width: 760, height: 400)
     root.orientation = .vertical
@@ -662,21 +652,21 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     heading.orientation = .vertical
     heading.alignment = .leading
     heading.spacing = 4
-    let headingTitle = NSTextField(labelWithString: agentText("tab.apps"))
+    let headingTitle = NSTextField(labelWithString: flowText("tab.apps"))
     headingTitle.font = NSFont.systemFont(ofSize: 17, weight: .semibold)
     heading.addArrangedSubview(headingTitle)
     heading.addArrangedSubview(appsHintLabel)
     header.addArrangedSubview(heading)
     header.addArrangedSubview(NSView())
     appAddButton.image = NSImage(
-      systemSymbolName: "plus", accessibilityDescription: agentText("apps.addRunning"))
+      systemSymbolName: "plus", accessibilityDescription: flowText("apps.addRunning"))
     appAddButton.imagePosition = .imageLeading
     header.addArrangedSubview(appAddButton)
     root.addArrangedSubview(header)
     header.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
     root.addArrangedSubview(separator())
     root.addArrangedSubview(
-      compactSettingRow(title: agentText("apps.enabled"), control: appHotkeyControls()))
+      compactSettingRow(title: flowText("apps.enabled"), control: appHotkeyControls()))
     let listSeparator = separator()
     root.addArrangedSubview(listSeparator)
 
@@ -722,13 +712,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   }
 
   private func appHotkeyControls() -> NSStackView {
-    let hideAllLabel = NSTextField(labelWithString: agentText("apps.hideAll"))
+    let hideAllLabel = NSTextField(labelWithString: flowText("apps.hideAll"))
     hideAllLabel.font = NSFont.systemFont(ofSize: 12)
     hideAllLabel.textColor = .secondaryLabelColor
-    hideAllLabel.toolTip = agentText("apps.hideAllDetail")
+    hideAllLabel.toolTip = flowText("apps.hideAllDetail")
     hideAllShortcutField.widthAnchor.constraint(equalToConstant: 110).isActive = true
     hideAllShortcutField.alignment = .center
-    hideAllShortcutField.placeholderString = agentText("apps.editShortcutHint")
+    hideAllShortcutField.placeholderString = flowText("apps.editShortcutHint")
     hideAllEditButton.widthAnchor.constraint(equalToConstant: 72).isActive = true
     hideAllClearButton.widthAnchor.constraint(equalToConstant: 40).isActive = true
     let switchSlot = NSView()
@@ -752,7 +742,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
   private func generalTab() -> NSTabViewItem {
     let item = NSTabViewItem(identifier: "general")
-    item.label = agentText("tab.general")
+    item.label = flowText("tab.general")
     let root = NSStackView()
     root.orientation = .vertical
     root.alignment = .width
@@ -760,7 +750,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     root.edgeInsets = NSEdgeInsets(top: 18, left: 18, bottom: 18, right: 18)
 
     let header = pageHeader(
-      title: agentText("general.title"), detail: agentText("general.detail"))
+      title: flowText("general.title"), detail: flowText("general.detail"))
     root.addArrangedSubview(header)
     header.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
     root.addArrangedSubview(separator())
@@ -779,8 +769,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     controls.addArrangedSubview(loginLaunchSwitch)
     root.addArrangedSubview(
       settingRow(
-        title: agentText("general.loginLaunch"),
-        detail: agentText("general.loginLaunchDetail"),
+        title: flowText("general.loginLaunch"),
+        detail: flowText("general.loginLaunchDetail"),
         control: controls
       ))
     root.addArrangedSubview(separator())
@@ -789,11 +779,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     languagePopup.action = #selector(changeLanguage)
     languagePopup.widthAnchor.constraint(equalToConstant: 118).isActive = true
     root.addArrangedSubview(
-      settingRow(title: agentText("language.label"), control: languagePopup))
+      settingRow(title: flowText("language.label"), control: languagePopup))
     root.addArrangedSubview(separator())
     root.addArrangedSubview(
       settingRow(
-        title: agentText("general.remove"), detail: agentText("general.removeDetail"),
+        title: flowText("general.remove"), detail: flowText("general.removeDetail"),
         control: removeAgentButton
       ))
     root.addArrangedSubview(NSView())
@@ -803,14 +793,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
   private func keepAwakeTab() -> NSTabViewItem {
     let item = NSTabViewItem(identifier: "keep-awake")
-    item.label = agentText("tab.keepAwake")
+    item.label = flowText("tab.keepAwake")
     let root = NSStackView()
     root.orientation = .vertical
     root.alignment = .width
     root.spacing = 14
     root.edgeInsets = NSEdgeInsets(top: 18, left: 18, bottom: 18, right: 18)
 
-    let header = pageHeader(title: agentText("keep.title"), detail: agentText("keep.detail"))
+    let header = pageHeader(title: flowText("keep.title"), detail: flowText("keep.detail"))
     root.addArrangedSubview(header)
     header.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
     root.addArrangedSubview(separator())
@@ -831,19 +821,19 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     masterControls.addArrangedSubview(approvalSlot)
     masterControls.addArrangedSubview(keepAwakeSwitch)
     root.addArrangedSubview(
-      settingRow(title: agentText("keep.prevent"), control: masterControls))
+      settingRow(title: flowText("keep.prevent"), control: masterControls))
     root.addArrangedSubview(separator())
     root.addArrangedSubview(
       settingRow(
-        title: agentText("keep.powerScope"),
-        detail: agentText("keep.powerScopeDetail"),
+        title: flowText("keep.powerScope"),
+        detail: flowText("keep.powerScopeDetail"),
         control: keepAwakePowerScopeControl
       ))
     root.addArrangedSubview(separator())
     root.addArrangedSubview(
       settingRow(
-        title: agentText("keep.lockOnLid"),
-        detail: agentText("keep.lockOnLidDetail"),
+        title: flowText("keep.lockOnLid"),
+        detail: flowText("keep.lockOnLidDetail"),
         control: lockOnLidCloseSwitch
       ))
     root.addArrangedSubview(separator())
@@ -858,14 +848,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
   private func dockPinTab() -> NSTabViewItem {
     let item = NSTabViewItem(identifier: "dock-anchor")
-    item.label = agentText("tab.dockPin")
+    item.label = flowText("tab.dockPin")
     let root = NSStackView()
     root.orientation = .vertical
     root.alignment = .width
     root.spacing = 14
     root.edgeInsets = NSEdgeInsets(top: 18, left: 18, bottom: 18, right: 18)
 
-    let header = pageHeader(title: agentText("dock.title"), detail: agentText("dock.detail"))
+    let header = pageHeader(title: flowText("dock.title"), detail: flowText("dock.detail"))
     root.addArrangedSubview(header)
     header.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
     root.addArrangedSubview(separator())
@@ -882,13 +872,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     anchorControls.addArrangedSubview(dockPinStatusLabel)
     anchorControls.addArrangedSubview(dockPermissionButton)
     anchorControls.addArrangedSubview(dockPinSwitch)
-    root.addArrangedSubview(settingRow(title: agentText("dock.checkbox"), control: anchorControls))
+    root.addArrangedSubview(settingRow(title: flowText("dock.checkbox"), control: anchorControls))
     root.addArrangedSubview(separator())
 
     dockDisplayPopup.target = self
     dockDisplayPopup.action = #selector(saveRuntimeSettings)
     dockDisplayPopup.widthAnchor.constraint(equalToConstant: 440).isActive = true
-    root.addArrangedSubview(settingRow(title: agentText("dock.display"), control: dockDisplayPopup))
+    root.addArrangedSubview(settingRow(title: flowText("dock.display"), control: dockDisplayPopup))
     root.addArrangedSubview(separator())
 
     dockTimingStatusLabel.alignment = .center
@@ -904,7 +894,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     timingControls.addArrangedSubview(dockTimingSwitch)
     root.addArrangedSubview(
       settingRow(
-        title: agentText("dock.timing"), detail: agentText("dock.timingDetail"),
+        title: flowText("dock.timing"), detail: flowText("dock.timingDetail"),
         control: timingControls))
     root.addArrangedSubview(NSView())
     item.view = root
@@ -913,15 +903,24 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
   private func inputDevicesTab() -> NSTabViewItem {
     let item = NSTabViewItem(identifier: "input-devices")
-    item.label = agentText("tab.inputDevices")
+    item.label = flowText("tab.inputDevices")
     let root = NSStackView()
     root.orientation = .vertical
     root.alignment = .width
-    root.spacing = 12
-    root.edgeInsets = NSEdgeInsets(top: 14, left: 18, bottom: 14, right: 18)
+    root.spacing = 14
+    root.edgeInsets = NSEdgeInsets(top: 18, left: 18, bottom: 18, right: 18)
 
-    root.addArrangedSubview(
-      pageHeader(title: agentText("devices.title"), detail: agentText("devices.detail")))
+    let header = pageHeader(title: flowText("devices.title"), detail: flowText("devices.detail"))
+    root.addArrangedSubview(header)
+    header.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
+    root.addArrangedSubview(separator())
+
+    let mouseHeading = pageHeader(title: flowText("devices.mouse.title"), detail: "")
+    if let titleLabel = mouseHeading.arrangedSubviews.first as? NSTextField {
+      titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+    }
+    root.addArrangedSubview(mouseHeading)
+    mouseHeading.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
 
     mouseScrollStatusLabel.alignment = .center
     mouseScrollStatusLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
@@ -938,8 +937,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     mouseControls.addArrangedSubview(mouseScrollReverseSwitch)
     root.addArrangedSubview(
       settingRow(
-        title: agentText("devices.mouse.reverse"),
-        detail: agentText("devices.mouse.reverseDetail"),
+        title: flowText("devices.mouse.reverse"),
+        detail: flowText("devices.mouse.reverseDetail"),
         control: mouseControls
       ))
     mouseDevicesStack.orientation = .vertical
@@ -950,45 +949,27 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     root.addArrangedSubview(separator())
 
     let keyboardHeading = pageHeader(
-      title: agentText("devices.keyboard.title"), detail: agentText("devices.keyboard.detail"))
+      title: flowText("devices.keyboard.title"), detail: flowText("devices.keyboard.detail"))
     if let titleLabel = keyboardHeading.arrangedSubviews.first as? NSTextField {
       titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
       titleLabel.alignment = .left
     }
     root.addArrangedSubview(keyboardHeading)
+    keyboardHeading.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
     keyboardDevicesStack.orientation = .vertical
     keyboardDevicesStack.alignment = .width
     keyboardDevicesStack.spacing = 8
     root.addArrangedSubview(keyboardDevicesStack)
 
-    let classificationSection = NSStackView()
-    classificationSection.orientation = .vertical
-    classificationSection.alignment = .width
-    classificationSection.spacing = 8
-    classificationSection.addArrangedSubview(separator())
-    let classificationHeading = pageHeader(
-      title: agentText("devices.unclassified.title"),
-      detail: agentText("devices.unclassified.detail")
-    )
-    if let titleLabel = classificationHeading.arrangedSubviews.first as? NSTextField {
-      titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
-    }
-    classificationSection.addArrangedSubview(classificationHeading)
-    unclassifiedDevicesStack.orientation = .vertical
-    unclassifiedDevicesStack.alignment = .width
-    unclassifiedDevicesStack.spacing = 8
-    classificationSection.addArrangedSubview(unclassifiedDevicesStack)
-    root.addArrangedSubview(classificationSection)
-    unclassifiedSection = classificationSection
     root.addArrangedSubview(NSView())
 
-    item.view = root
+    item.view = scrollableTabView(content: root)
     return item
   }
 
   private func screenshotsTab() -> NSTabViewItem {
     let item = NSTabViewItem(identifier: "screenshots")
-    item.label = agentText("tab.screenshots")
+    item.label = flowText("tab.screenshots")
     let root = NSStackView()
     root.orientation = .vertical
     root.alignment = .width
@@ -996,7 +977,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     root.edgeInsets = NSEdgeInsets(top: 18, left: 18, bottom: 18, right: 18)
 
     let header = pageHeader(
-      title: agentText("screenshots.title"), detail: agentText("screenshots.detail"))
+      title: flowText("screenshots.title"), detail: flowText("screenshots.detail"))
     root.addArrangedSubview(header)
     header.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
     root.addArrangedSubview(separator())
@@ -1008,14 +989,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     pathControls.addArrangedSubview(screenshotFolderButton)
     pathControls.addArrangedSubview(
       actionButton(
-        title: agentText("screenshots.choose"), action: #selector(chooseScreenshotDirectory)))
+        title: flowText("screenshots.choose"), action: #selector(chooseScreenshotDirectory)))
     root.addArrangedSubview(
-      settingRow(title: agentText("screenshots.folder"), control: pathControls))
+      settingRow(title: flowText("screenshots.folder"), control: pathControls))
     root.addArrangedSubview(separator())
     root.addArrangedSubview(
       settingRow(
-        title: agentText("screenshots.copy"),
-        detail: agentText("screenshots.copyDetail"),
+        title: flowText("screenshots.copy"),
+        detail: flowText("screenshots.copyDetail"),
         control: screenshotWatchSwitch
       ))
     root.addArrangedSubview(NSView())
@@ -1039,7 +1020,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     refreshMouseScrollUI()
     refreshMouseDevices()
     refreshKeyboardDevices()
-    refreshUnclassifiedDevices()
     refreshDockPinUI()
     refreshDockTimingUI()
     refreshKeepAwakeUI()
@@ -1095,7 +1075,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     row.shortcutField.widthAnchor.constraint(equalToConstant: 110).isActive = true
     row.shortcutField.alignment = .center
-    row.shortcutField.placeholderString = agentText("apps.editShortcutHint")
+    row.shortcutField.placeholderString = flowText("apps.editShortcutHint")
     row.shortcutField.lineBreakMode = .byTruncatingMiddle
     row.enabledSwitch.target = self
     row.enabledSwitch.action = #selector(toggleRowEnabled(_:))
@@ -1110,9 +1090,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     row.removeButton.action = #selector(removeRow(_:))
     row.removeButton.bezelStyle = .rounded
     row.removeButton.controlSize = .regular
-    row.removeButton.toolTip = agentText("apps.remove")
+    row.removeButton.toolTip = flowText("apps.remove")
     row.removeButton.image = NSImage(
-      systemSymbolName: "trash", accessibilityDescription: agentText("apps.remove"))
+      systemSymbolName: "trash", accessibilityDescription: flowText("apps.remove"))
     row.removeButton.imagePosition = .imageOnly
     row.removeButton.contentTintColor = .systemRed
     row.removeButton.heightAnchor.constraint(equalToConstant: 32).isActive = true
@@ -1156,9 +1136,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   @objc private func addRunningApp() {
     let apps = visibleRunningApplications()
     let alert = NSAlert()
-    alert.messageText = agentText("apps.addRunning")
+    alert.messageText = flowText("apps.addRunning")
     alert.informativeText =
-      agentLanguage() == .korean
+      flowLanguage() == .korean
       ? "현재 화면에 창이 보이는 앱만 표시합니다. 앱을 선택한 뒤 단축키를 지정합니다."
       : "Only apps with visible windows are listed. Choose an app, then set its shortcut."
     let popup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 420, height: 28))
@@ -1167,8 +1147,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
       popup.addItem(withTitle: title)
     }
     alert.accessoryView = popup
-    alert.addButton(withTitle: agentText("apps.add"))
-    alert.addButton(withTitle: agentText("apps.cancel"))
+    alert.addButton(withTitle: flowText("apps.add"))
+    alert.addButton(withTitle: flowText("apps.cancel"))
     guard alert.runModal() == .alertFirstButtonReturn,
       popup.indexOfSelectedItem >= 0,
       apps.indices.contains(popup.indexOfSelectedItem)
@@ -1238,12 +1218,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     let nameField = NSTextField(string: initial.label)
     let bundleField = NSTextField(string: initial.bundleID)
     let shortcutField = ShortcutCaptureField(string: initial.shortcut)
-    shortcutField.placeholderString = agentText("apps.editShortcutHint")
+    shortcutField.placeholderString = flowText("apps.editShortcutHint")
 
     let grid = NSGridView(views: [
-      [NSTextField(labelWithString: agentText("apps.editName")), nameField],
-      [NSTextField(labelWithString: agentText("apps.editBundle")), bundleField],
-      [NSTextField(labelWithString: agentText("apps.editShortcut")), shortcutField],
+      [NSTextField(labelWithString: flowText("apps.editName")), nameField],
+      [NSTextField(labelWithString: flowText("apps.editBundle")), bundleField],
+      [NSTextField(labelWithString: flowText("apps.editShortcut")), shortcutField],
     ])
     grid.column(at: 0).xPlacement = .trailing
     grid.column(at: 1).width = 360
@@ -1251,10 +1231,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     grid.columnSpacing = 10
 
     let alert = NSAlert()
-    alert.messageText = agentText("apps.editTitle")
+    alert.messageText = flowText("apps.editTitle")
     alert.accessoryView = grid
-    alert.addButton(withTitle: agentText("apps.add"))
-    alert.addButton(withTitle: agentText("apps.cancel"))
+    alert.addButton(withTitle: flowText("apps.add"))
+    alert.addButton(withTitle: flowText("apps.cancel"))
     onShortcutCaptureStart?()
     let result = alert.runModal()
     onShortcutCaptureEnd?()
@@ -1370,7 +1350,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     setAppShortcutEditingMode(activeRow: nil)
     beginShortcutCapture(
       for: hideAllShortcutField,
-      label: agentText("apps.hideAll"),
+      label: flowText("apps.hideAll"),
       onCancel: { [weak self] in self?.cancelHideAllEditing() }
     )
     window?.makeFirstResponder(hideAllShortcutField)
@@ -1408,16 +1388,16 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
       configured || isEditingHideAll ? .labelColor : .tertiaryLabelColor
     hideAllEditButton.title =
       isEditingHideAll
-      ? agentText("apps.applyRow")
-      : (configured ? agentText("apps.editRow") : agentText("apps.hideAllSet"))
+      ? flowText("apps.applyRow")
+      : (configured ? flowText("apps.editRow") : flowText("apps.hideAllSet"))
     hideAllClearButton.image = NSImage(
       systemSymbolName: isEditingHideAll ? "xmark" : "trash",
       accessibilityDescription: isEditingHideAll
-        ? agentText("apps.cancel") : agentText("apps.hideAllClear")
+        ? flowText("apps.cancel") : flowText("apps.hideAllClear")
     )
     hideAllClearButton.contentTintColor = isEditingHideAll ? .controlAccentColor : .systemRed
     hideAllClearButton.toolTip =
-      isEditingHideAll ? agentText("apps.cancel") : agentText("apps.hideAllClear")
+      isEditingHideAll ? flowText("apps.cancel") : flowText("apps.hideAllClear")
     hideAllClearButton.isEnabled = isEditingHideAll || configured
   }
 
@@ -1486,12 +1466,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         row.shortcutField.isCapturingShortcut = true
         row.editButton.isEnabled = true
         row.removeButton.isEnabled = true
-        row.removeButton.title = agentText("apps.cancel")
+        row.removeButton.title = flowText("apps.cancel")
         row.removeButton.image = NSImage(
-          systemSymbolName: "xmark", accessibilityDescription: agentText("apps.cancel"))
+          systemSymbolName: "xmark", accessibilityDescription: flowText("apps.cancel"))
         row.removeButton.imagePosition = .imageLeading
         row.removeButton.contentTintColor = .controlAccentColor
-        row.removeButton.toolTip = agentText("apps.cancel")
+        row.removeButton.toolTip = flowText("apps.cancel")
         row.shortcutField.textColor = .labelColor
       } else {
         row.editButton.isEnabled = !editing
@@ -1544,8 +1524,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   private func updateAppsHint(count: Int) {
     appsHintLabel.stringValue =
       count == 0
-      ? agentText("apps.hint")
-      : "\(count)\(agentText("apps.countSuffix")) · \(agentText("apps.hint"))"
+      ? flowText("apps.hint")
+      : "\(count)\(flowText("apps.countSuffix")) · \(flowText("apps.hint"))"
   }
 
   @objc private func chooseScreenshotDirectory() {
@@ -1556,7 +1536,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     panel.directoryURL = URL(fileURLWithPath: screenshotDirectoryPath, isDirectory: true)
     guard panel.runModal() == .OK, let url = panel.url else { return }
     guard setMacOSScreenshotLocation(url.path) else {
-      statusLabel.stringValue = agentText("status.failed")
+      statusLabel.stringValue = flowText("status.failed")
       return
     }
     screenshotDirectoryPath = url.path
@@ -1575,14 +1555,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   }
 
   @objc private func toggleScreenshotWatch() {
-    let enabled = screenshotWatchSwitch.state == .on
-    guard setMacOSScreenshotFloatingThumbnailEnabled(!enabled),
-      macOSScreenshotFloatingThumbnailEnabled() == !enabled
-    else {
-      screenshotWatchSwitch.state = config.screenshotClipboardWatch ? .on : .off
-      statusLabel.stringValue = agentText("status.failed")
-      return
-    }
     saveRuntimeSettings()
   }
 
@@ -1590,27 +1562,27 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     loginLaunchSwitch.isEnabled = false
     do {
       try LoginLaunchManager.shared.setEnabled(loginLaunchSwitch.state == .on)
-      statusLabel.stringValue = agentText("status.saved")
+      statusLabel.stringValue = flowText("status.saved")
       if LoginLaunchManager.shared.status == .requiresApproval {
         LoginLaunchManager.shared.openSystemSettings()
       }
     } catch {
-      statusLabel.stringValue = "\(agentText("status.failed")): \(error.localizedDescription)"
+      statusLabel.stringValue = "\(flowText("status.failed")): \(error.localizedDescription)"
     }
     refreshLoginLaunchUI()
   }
 
   @objc private func removeAgent() {
     guard let window, removalSheet == nil else { return }
-    let sheet = AgentRemovalSheetController()
+    let sheet = FlowRemovalSheetController()
     removalSheet = sheet
     sheet.present(from: window) { [weak self] options in
       guard let self else { return }
       self.removalSheet = nil
       guard let options else { return }
       self.removeAgentButton.isEnabled = false
-      self.statusLabel.stringValue = agentText("general.removeProgress")
-      AgentRemovalCoordinator.remove(options: options) { [weak self] result in
+      self.statusLabel.stringValue = flowText("general.removeProgress")
+      FlowRemovalCoordinator.remove(options: options) { [weak self] result in
         guard case .failure(let error) = result else { return }
         self?.removeAgentButton.isEnabled = true
         self?.statusLabel.stringValue = error.localizedDescription
@@ -1626,27 +1598,27 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     case .disabled:
       loginLaunchSwitch.state = .off
       loginLaunchSwitch.isEnabled = true
-      text = agentText("state.off")
+      text = flowText("state.off")
       tint = .secondaryLabelColor
     case .enabled:
       loginLaunchSwitch.state = .on
       loginLaunchSwitch.isEnabled = true
-      text = agentText("state.on")
+      text = flowText("state.on")
       tint = .systemGreen
     case .requiresApproval:
       loginLaunchSwitch.state = .on
       loginLaunchSwitch.isEnabled = true
-      text = agentText("general.status.approval")
+      text = flowText("general.status.approval")
       tint = .systemOrange
     case .needsRepair:
       loginLaunchSwitch.state = .on
       loginLaunchSwitch.isEnabled = true
-      text = agentText("general.status.repair")
+      text = flowText("general.status.repair")
       tint = .systemOrange
     case .appNotInstalled:
       loginLaunchSwitch.state = .off
       loginLaunchSwitch.isEnabled = false
-      text = agentText("general.status.install")
+      text = flowText("general.status.install")
       tint = .systemOrange
     }
     loginLaunchStatusLabel.stringValue = text
@@ -1703,7 +1675,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
     saveRuntimeSettings()
     if needsAccessibility && !AXIsProcessTrusted() {
-      statusLabel.stringValue = agentText("dock.status.needsPermission")
+      statusLabel.stringValue = flowText("dock.status.needsPermission")
     }
   }
 
@@ -1721,13 +1693,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     do {
       try DockAutoHideTiming.setFastEnabled(dockTimingSwitch.state == .on)
       refreshDockTimingUI()
-      statusLabel.stringValue = agentText("status.saved")
+      statusLabel.stringValue = flowText("status.saved")
       DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
         self?.refreshDockPinUI(status: self?.dockPinStatusProvider())
       }
     } catch {
       refreshDockTimingUI()
-      statusLabel.stringValue = "\(agentText("status.failed")): \(error.localizedDescription)"
+      statusLabel.stringValue = "\(flowText("status.failed")): \(error.localizedDescription)"
     }
   }
 
@@ -1741,7 +1713,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
       NSWorkspace.shared.open(url)
     }
     refreshMouseScrollUI(
-      status: AXIsProcessTrusted() ? nil : agentText("devices.mouse.status.needsPermission"))
+      status: AXIsProcessTrusted() ? nil : flowText("devices.mouse.status.needsPermission"))
     refreshDockPinUI(
       status: AXIsProcessTrusted() ? dockPinStatusProvider() : .needsPermission)
   }
@@ -1774,10 +1746,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         dockPinEnabled: dockPinSwitch.state == .on,
         dockPinDisplayID: selectedDockDisplayID()
       )
-      statusLabel.stringValue = agentText("status.saved")
+      statusLabel.stringValue = flowText("status.saved")
       onSave?()
     } catch {
-      statusLabel.stringValue = "\(agentText("status.failed")): \(error.localizedDescription)"
+      statusLabel.stringValue = "\(flowText("status.failed")): \(error.localizedDescription)"
     }
   }
 
@@ -1794,10 +1766,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         dockPinEnabled: dockPinSwitch.state == .on,
         dockPinDisplayID: selectedDockDisplayID()
       )
-      statusLabel.stringValue = agentText("status.saved")
+      statusLabel.stringValue = flowText("status.saved")
       onSave?()
     } catch {
-      statusLabel.stringValue = "\(agentText("status.failed")): \(error.localizedDescription)"
+      statusLabel.stringValue = "\(flowText("status.failed")): \(error.localizedDescription)"
     }
   }
 }

@@ -1,11 +1,11 @@
 import AppKit
 
-final class AgentRemovalSheetController: NSWindowController {
+final class FlowRemovalSheetController: NSWindowController {
   private let resetSettingsSwitch = NSSwitch()
   private let resetDockTimingSwitch = NSSwitch()
   private let resetScreenshotLocationSwitch = NSSwitch()
   private let resetKeyboardMappingsSwitch = NSSwitch()
-  private var completion: ((AgentRemovalOptions?) -> Void)?
+  private var completion: ((FlowRemovalOptions?) -> Void)?
 
   init() {
     let panel = NSPanel(
@@ -14,7 +14,7 @@ final class AgentRemovalSheetController: NSWindowController {
       backing: .buffered,
       defer: false
     )
-    panel.title = agentText("general.remove")
+    panel.title = flowText("general.remove")
     panel.titleVisibility = .hidden
     panel.titlebarAppearsTransparent = true
     panel.isMovable = false
@@ -27,7 +27,7 @@ final class AgentRemovalSheetController: NSWindowController {
     nil
   }
 
-  func present(from parent: NSWindow, completion: @escaping (AgentRemovalOptions?) -> Void) {
+  func present(from parent: NSWindow, completion: @escaping (FlowRemovalOptions?) -> Void) {
     self.completion = completion
     parent.beginSheet(window!)
   }
@@ -53,14 +53,14 @@ final class AgentRemovalSheetController: NSWindowController {
     root.addArrangedSubview(separator())
     root.addArrangedSubview(
       sectionHeader(
-        title: agentText("general.removeSheet.alwaysTitle"),
-        detail: agentText("general.removeSheet.alwaysDetail")
+        title: flowText("general.removeSheet.alwaysTitle"),
+        detail: flowText("general.removeSheet.alwaysDetail")
       ))
     root.addArrangedSubview(separator())
     root.addArrangedSubview(
       sectionHeader(
-        title: agentText("general.removeSheet.resetTitle"),
-        detail: agentText("general.removeSheet.resetDetail")
+        title: flowText("general.removeSheet.resetTitle"),
+        detail: flowText("general.removeSheet.resetDetail")
       ))
     root.addArrangedSubview(resetChoices())
     root.addArrangedSubview(separator())
@@ -75,7 +75,7 @@ final class AgentRemovalSheetController: NSWindowController {
 
     let icon = NSImageView()
     icon.image = NSImage(
-      systemSymbolName: "trash.circle.fill", accessibilityDescription: agentText("general.remove"))
+      systemSymbolName: "trash.circle.fill", accessibilityDescription: flowText("general.remove"))
     icon.contentTintColor = .systemRed
     icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 30, weight: .medium)
     icon.widthAnchor.constraint(equalToConstant: 34).isActive = true
@@ -86,9 +86,9 @@ final class AgentRemovalSheetController: NSWindowController {
     labels.orientation = .vertical
     labels.alignment = .leading
     labels.spacing = 3
-    let title = NSTextField(labelWithString: agentText("general.removeSheet.title"))
+    let title = NSTextField(labelWithString: flowText("general.removeSheet.title"))
     title.font = NSFont.systemFont(ofSize: 18, weight: .semibold)
-    let detail = NSTextField(wrappingLabelWithString: agentText("general.removeSheet.detail"))
+    let detail = NSTextField(wrappingLabelWithString: flowText("general.removeSheet.detail"))
     detail.font = NSFont.systemFont(ofSize: 12)
     detail.textColor = .secondaryLabelColor
     labels.addArrangedSubview(title)
@@ -106,29 +106,29 @@ final class AgentRemovalSheetController: NSWindowController {
     choices.spacing = 0
     choices.addArrangedSubview(
       resetRow(
-        title: agentText("general.remove.settings"),
-        detail: agentText("general.remove.settingsDetail"),
+        title: flowText("general.remove.settings"),
+        detail: flowText("general.remove.settingsDetail"),
         toggle: resetSettingsSwitch
       ))
     choices.addArrangedSubview(separator())
     choices.addArrangedSubview(
       resetRow(
-        title: agentText("general.remove.dock"),
-        detail: agentText("general.remove.dockDetail"),
+        title: flowText("general.remove.dock"),
+        detail: flowText("general.remove.dockDetail"),
         toggle: resetDockTimingSwitch
       ))
     choices.addArrangedSubview(separator())
     choices.addArrangedSubview(
       resetRow(
-        title: agentText("general.remove.screenshot"),
-        detail: agentText("general.remove.screenshotDetail"),
+        title: flowText("general.remove.screenshot"),
+        detail: flowText("general.remove.screenshotDetail"),
         toggle: resetScreenshotLocationSwitch
       ))
     choices.addArrangedSubview(separator())
     choices.addArrangedSubview(
       resetRow(
-        title: agentText("general.remove.keyboard"),
-        detail: agentText("general.remove.keyboardDetail"),
+        title: flowText("general.remove.keyboard"),
+        detail: flowText("general.remove.keyboardDetail"),
         toggle: resetKeyboardMappingsSwitch
       ))
     return choices
@@ -189,21 +189,21 @@ final class AgentRemovalSheetController: NSWindowController {
     row.alignment = .centerY
     row.spacing = 8
     let note = NSTextField(
-      wrappingLabelWithString: agentText("general.removeSheet.accessibilityNote"))
+      wrappingLabelWithString: flowText("general.removeSheet.accessibilityNote"))
     note.font = NSFont.systemFont(ofSize: 11)
     note.textColor = .tertiaryLabelColor
     note.setContentHuggingPriority(.defaultLow, for: .horizontal)
     row.addArrangedSubview(note)
     row.addArrangedSubview(NSView())
 
-    let cancel = NSButton(title: agentText("apps.cancel"), target: self, action: #selector(cancel))
+    let cancel = NSButton(title: flowText("apps.cancel"), target: self, action: #selector(cancel))
     cancel.bezelStyle = .rounded
     cancel.keyEquivalent = "\u{1b}"
     cancel.widthAnchor.constraint(equalToConstant: 76).isActive = true
     row.addArrangedSubview(cancel)
 
     let remove = NSButton(
-      title: agentText("general.removeConfirm"), target: self, action: #selector(confirm))
+      title: flowText("general.removeConfirm"), target: self, action: #selector(confirm))
     remove.bezelStyle = .rounded
     remove.contentTintColor = .systemRed
     remove.widthAnchor.constraint(equalToConstant: 92).isActive = true
@@ -223,7 +223,7 @@ final class AgentRemovalSheetController: NSWindowController {
 
   @objc private func confirm() {
     finish(
-      with: AgentRemovalOptions(
+      with: FlowRemovalOptions(
         removeSettings: resetSettingsSwitch.state == .on,
         resetDockTiming: resetDockTimingSwitch.state == .on,
         resetScreenshotLocation: resetScreenshotLocationSwitch.state == .on,
@@ -231,7 +231,7 @@ final class AgentRemovalSheetController: NSWindowController {
       ))
   }
 
-  private func finish(with options: AgentRemovalOptions?) {
+  private func finish(with options: FlowRemovalOptions?) {
     guard let sheet = window, let parent = sheet.sheetParent else { return }
     let completion = self.completion
     self.completion = nil

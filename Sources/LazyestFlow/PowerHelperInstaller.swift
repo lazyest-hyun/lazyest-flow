@@ -1,6 +1,6 @@
 import Darwin
 import Foundation
-import MacBootstrapCore
+import LazyestCore
 import Security
 
 enum PowerHelperInstaller {
@@ -28,8 +28,8 @@ enum PowerHelperInstaller {
   }
 
   static var isInstalled: Bool {
-    validRootOwnedFile(path: MacBootstrapPowerHelper.installedExecutablePath, mode: 0o755)
-      && validRootOwnedFile(path: MacBootstrapPowerHelper.installedPlistPath, mode: 0o644)
+    validRootOwnedFile(path: LazyestPowerHelper.installedExecutablePath, mode: 0o755)
+      && validRootOwnedFile(path: LazyestPowerHelper.installedPlistPath, mode: 0o644)
   }
 
   static func requestInstall(completion: @escaping (Bool, String?) -> Void) {
@@ -43,9 +43,9 @@ enum PowerHelperInstaller {
   static func installAsRoot() -> Int32 {
     do {
       try requireRootAndInstalledApplication()
-      try verifyCode(at: MacBootstrapPowerHelper.installedAppPath, deep: true)
-      try verifyCode(at: MacBootstrapPowerHelper.embeddedHelperPath, deep: false)
-      let clientCDHash = try codeHash(at: MacBootstrapPowerHelper.installedAppPath)
+      try verifyCode(at: LazyestPowerHelper.installedAppPath, deep: true)
+      try verifyCode(at: LazyestPowerHelper.embeddedHelperPath, deep: false)
+      let clientCDHash = try codeHash(at: LazyestPowerHelper.installedAppPath)
       let clientUserID = try consoleUserID()
 
       try restoreOwnedSleepState()
@@ -69,7 +69,7 @@ enum PowerHelperInstaller {
       )
       try runChecked(
         "/bin/launchctl",
-        ["bootstrap", "system", MacBootstrapPowerHelper.installedPlistPath]
+        ["bootstrap", "system", LazyestPowerHelper.installedPlistPath]
       )
       return 0
     } catch {
@@ -85,11 +85,11 @@ enum PowerHelperInstaller {
       try bootOutLoadedHelper()
       let fileManager = FileManager.default
       try removeIfPresent(
-        path: MacBootstrapPowerHelper.installedExecutablePath, fileManager: fileManager)
+        path: LazyestPowerHelper.installedExecutablePath, fileManager: fileManager)
       try removeIfPresent(
-        path: MacBootstrapPowerHelper.installedPlistPath, fileManager: fileManager)
+        path: LazyestPowerHelper.installedPlistPath, fileManager: fileManager)
       try removeIfPresent(
-        path: MacBootstrapPowerHelper.ownedSleepMarkerPath, fileManager: fileManager)
+        path: LazyestPowerHelper.ownedSleepMarkerPath, fileManager: fileManager)
       return 0
     } catch {
       fputs("Power helper removal failed: \(error.localizedDescription)\n", stderr)
@@ -101,8 +101,8 @@ enum PowerHelperInstaller {
     _ argument: String,
     completion: @escaping (Bool, String?) -> Void
   ) {
-    guard currentExecutablePath() == MacBootstrapPowerHelper.installedAgentExecutablePath else {
-      completion(false, "Install MacBootstrapAgent in /Applications first.")
+    guard currentExecutablePath() == LazyestPowerHelper.installedFlowExecutablePath else {
+      completion(false, "Install Lazyest Flow in /Applications first.")
       return
     }
     let allowedArguments = [
@@ -114,7 +114,9 @@ enum PowerHelperInstaller {
       return
     }
 
-    let command = "\(MacBootstrapPowerHelper.installedAgentExecutablePath) \(argument)"
+    let executable = LazyestPowerHelper.installedFlowExecutablePath
+      .replacingOccurrences(of: "'", with: "'\\''")
+    let command = "'\(executable)' \(argument)"
     let script = "do shell script \"\(command)\" with administrator privileges"
     DispatchQueue.global(qos: .userInitiated).async {
       let process = Process()
@@ -146,16 +148,16 @@ enum PowerHelperInstaller {
   private static func requireRootAndInstalledApplication() throws {
     guard geteuid() == 0 else { throw InstallerError.administratorRequired }
     let executablePath = currentExecutablePath()
-    guard executablePath == MacBootstrapPowerHelper.installedAgentExecutablePath else {
+    guard executablePath == LazyestPowerHelper.installedFlowExecutablePath else {
       throw InstallerError.unexpectedExecutable(executablePath ?? "unknown")
     }
   }
 
   private static func installHelperBinary(fileManager: FileManager) throws {
-    let source = URL(fileURLWithPath: MacBootstrapPowerHelper.embeddedHelperPath)
-    let destination = URL(fileURLWithPath: MacBootstrapPowerHelper.installedExecutablePath)
+    let source = URL(fileURLWithPath: LazyestPowerHelper.embeddedHelperPath)
+    let destination = URL(fileURLWithPath: LazyestPowerHelper.installedExecutablePath)
     let temporary = destination.deletingLastPathComponent().appendingPathComponent(
-      ".\(MacBootstrapPowerHelper.label).\(UUID().uuidString).tmp")
+      ".\(LazyestPowerHelper.label).\(UUID().uuidString).tmp")
     defer { try? fileManager.removeItem(at: temporary) }
 
     try fileManager.copyItem(at: source, to: temporary)
@@ -171,22 +173,22 @@ enum PowerHelperInstaller {
     fileManager: FileManager
   ) throws {
     let values: [String: Any] = [
-      "Label": MacBootstrapPowerHelper.label,
-      "ProgramArguments": [MacBootstrapPowerHelper.installedExecutablePath],
-      "MachServices": [MacBootstrapPowerHelper.label: true],
+      "Label": LazyestPowerHelper.label,
+      "ProgramArguments": [LazyestPowerHelper.installedExecutablePath],
+      "MachServices": [LazyestPowerHelper.label: true],
       "EnvironmentVariables": [
-        MacBootstrapPowerHelper.clientAppPathEnvironment:
-          MacBootstrapPowerHelper.installedAppPath,
-        MacBootstrapPowerHelper.clientCDHashEnvironment: clientCDHash,
-        MacBootstrapPowerHelper.clientUserIDEnvironment: String(clientUserID),
+        LazyestPowerHelper.clientAppPathEnvironment:
+          LazyestPowerHelper.installedAppPath,
+        LazyestPowerHelper.clientCDHashEnvironment: clientCDHash,
+        LazyestPowerHelper.clientUserIDEnvironment: String(clientUserID),
       ],
       "ProcessType": "Background",
     ]
     let data = try PropertyListSerialization.data(
       fromPropertyList: values, format: .xml, options: 0)
-    let destination = URL(fileURLWithPath: MacBootstrapPowerHelper.installedPlistPath)
+    let destination = URL(fileURLWithPath: LazyestPowerHelper.installedPlistPath)
     let temporary = destination.deletingLastPathComponent().appendingPathComponent(
-      ".\(MacBootstrapPowerHelper.plistName).\(UUID().uuidString).tmp")
+      ".\(LazyestPowerHelper.plistName).\(UUID().uuidString).tmp")
     defer { try? fileManager.removeItem(at: temporary) }
 
     try data.write(to: temporary, options: .atomic)
@@ -202,14 +204,14 @@ enum PowerHelperInstaller {
   }
 
   private static func restoreOwnedSleepState() throws {
-    let marker = MacBootstrapPowerHelper.ownedSleepMarkerPath
+    let marker = LazyestPowerHelper.ownedSleepMarkerPath
     guard FileManager.default.fileExists(atPath: marker) else { return }
     try runChecked("/usr/bin/pmset", ["-a", "disablesleep", "0"])
     try FileManager.default.removeItem(atPath: marker)
   }
 
   private static func bootOutLoadedHelper() throws {
-    let serviceTarget = "system/\(MacBootstrapPowerHelper.label)"
+    let serviceTarget = "system/\(LazyestPowerHelper.label)"
     guard run("/bin/launchctl", ["print", serviceTarget]).status == 0 else { return }
     try runChecked("/bin/launchctl", ["bootout", serviceTarget])
   }

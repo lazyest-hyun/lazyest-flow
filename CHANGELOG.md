@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.0 - 2026-07-17
+
+- Rebranded the menu bar app, Swift package, executables, and source modules as Lazyest Flow.
+- Migrated the legacy MacBootstrapAgent app and Application Support directory during installation.
+- Preserved the bundle identifier, helper labels, signing identity fallback, and login-item maintenance keys so existing permissions and runtime settings continue to work.
+
+## 0.4.13 - 2026-07-15
+
+- Improved light-mode contrast for tabs and cards while keeping colors adaptive when the system appearance changes.
+- Separated connected mouse and keyboard rows, defaulted ambiguous receivers to the mouse section, and added an in-row device type switch.
+- Aligned Input Devices headings with the other tabs and made the device page scroll when its content grows.
+- Limited keyboard presets to device-specific Windows-to-Mac modifier mapping; global F18 input switching remains owned by Setup.
+- Preserved the macOS floating screenshot thumbnail while copying completed captures to the clipboard.
+
 ## 0.4.12 - 2026-07-15
 
 - Stopped activating every window of the previously foreground application when hiding a hotkey target, preventing unrelated Chrome windows from covering visible apps on other displays.
@@ -22,7 +36,7 @@
 ## 0.4.8 - 2026-07-14
 
 - Added an opt-in Fast Dock Response toggle. Enabling sets no reveal delay and a 0.15-second animation; disabling deletes only those Dock overrides and restores macOS defaults.
-- Displayed whether Dock timing is using macOS defaults, the Agent fast setting, or an existing user-defined value without changing it on launch.
+- Displayed whether Dock timing is using macOS defaults, the Flow fast setting, or an existing user-defined value without changing it on launch.
 
 ## 0.4.7 - 2026-07-14
 
@@ -36,15 +50,15 @@
 
 ## 0.4.5 - 2026-07-13
 
-- Replaced the opaque `/usr/bin/open` LaunchAgent with the native `SMAppService.mainApp` login item so MacBootstrapAgent appears by name in System Settings.
+- Replaced the opaque `/usr/bin/open` LaunchAgent with the native `SMAppService.mainApp` login item so LazyestFlow appears by name in System Settings.
 - Migrated an enabled legacy login registration only after native registration succeeds and preserved the setting across source updates.
 - Detected the macOS login-item launch Apple event so automatic startup remains menu-bar-only while a manual app launch still opens Settings.
 
 ## 0.4.4 - 2026-07-13
 
-- Added an opt-in Start at Login setting that launches the installed Agent in the menu bar after macOS login without opening its settings window.
+- Added an opt-in Start at Login setting that launches the installed Flow in the menu bar after macOS login without opening its settings window.
 - Added verified, user-scoped LaunchAgent registration with no keep-alive restart loop, no shell evaluation, and no administrator permission requirement.
-- Preserved the login-start choice across source updates and removed it when the Agent is uninstalled.
+- Preserved the login-start choice across source updates and removed it when the Flow is uninstalled.
 
 ## 0.4.3 - 2026-07-13
 
@@ -52,8 +66,8 @@
 - Added a fixed-layout power scope control for power-only or battery operation, with automatic low-battery and thermal safety pauses.
 - Added an optional lid-close action that immediately locks the session and turns off displays while background work remains awake.
 - Added live power/helper state in the settings window without inserting or removing rows as state changes.
-- Pinned privileged XPC calls to the installing console user, current Agent path, bundle identifier, valid running code, and installation-time CDHash.
-- Added a 90-second helper watchdog, root-only ownership marker, safe update refresh, and removal that restores only the sleep state owned by the Agent.
+- Pinned privileged XPC calls to the installing console user, current Flow path, bundle identifier, valid running code, and installation-time CDHash.
+- Added a 90-second helper watchdog, root-only ownership marker, safe update refresh, and removal that restores only the sleep state owned by the Flow.
 
 ## 0.4.2 - 2026-07-13
 
@@ -121,7 +135,7 @@
 
 ## 0.2.0 - 2026-07-10
 
-- Split MacBootstrapAgent into its own repository and Swift package.
+- Split LazyestFlow into its own repository and Swift package.
 - Added configurable app hotkeys, screenshot clipboard copy, sleep prevention, and Dock pinning.
 - Kept fresh installs inert with no default hotkeys or enabled runtime features.
 - Added Korean and English UI.

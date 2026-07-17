@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
   <key>CFBundleExecutable</key>
-  <string>MacBootstrapPowerHelper</string>
+  <string>LazyestPowerHelper</string>
   <key>CFBundleIdentifier</key>
   <string>com.estaid.mac-bootstrap-agent.power-helper</string>
   <key>CFBundleName</key>
-  <string>MacBootstrapPowerHelper</string>
+  <string>LazyestPowerHelper</string>
   <key>CFBundlePackageType</key>
   <string>????</string>
   <key>CFBundleShortVersionString</key>

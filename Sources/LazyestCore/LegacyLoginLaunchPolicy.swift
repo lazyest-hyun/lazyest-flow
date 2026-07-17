@@ -2,9 +2,9 @@ import Foundation
 
 public enum LegacyLoginLaunchPolicy {
   public static let label = "com.estaid.mac-bootstrap-agent.login"
-  public static let installedAppPath = "/Applications/MacBootstrapAgent.app"
-  public static let installedAgentExecutablePath =
-    "\(installedAppPath)/Contents/MacOS/MacBootstrapAgent"
+  public static let installedAppPath = "/Applications/Lazyest Flow.app"
+  public static let installedFlowExecutablePath =
+    "\(installedAppPath)/Contents/MacOS/LazyestFlow"
   public static let openerPath = "/usr/bin/open"
   public static let loginArgument = "--login-launch"
 

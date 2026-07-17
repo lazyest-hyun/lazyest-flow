@@ -1,15 +1,15 @@
 import Foundation
 
-public enum MacBootstrapPowerHelper {
+public enum LazyestPowerHelper {
   public static let label = "com.estaid.mac-bootstrap-agent.power-helper"
   public static let agentBundleIdentifier = "com.estaid.mac-bootstrap-agent"
   public static let plistName = "\(label).plist"
-  public static let executableName = "MacBootstrapPowerHelper"
+  public static let executableName = "LazyestPowerHelper"
   public static let protocolVersion = "1"
   public static let watchdogTimeout: TimeInterval = 90
-  public static let installedAppPath = "/Applications/MacBootstrapAgent.app"
-  public static let installedAgentExecutablePath =
-    "\(installedAppPath)/Contents/MacOS/MacBootstrapAgent"
+  public static let installedAppPath = "/Applications/Lazyest Flow.app"
+  public static let installedFlowExecutablePath =
+    "\(installedAppPath)/Contents/MacOS/LazyestFlow"
   public static let embeddedHelperPath =
     "\(installedAppPath)/Contents/MacOS/\(executableName)"
   public static let installedExecutablePath =
@@ -22,7 +22,7 @@ public enum MacBootstrapPowerHelper {
   public static let clientUserIDEnvironment = "MAC_BOOTSTRAP_CLIENT_UID"
 }
 
-@objc public protocol MacBootstrapPowerHelperProtocol {
+@objc public protocol LazyestPowerHelperProtocol {
   func setSleepDisabled(
     _ enabled: Bool,
     withReply reply: @escaping (Bool, String?) -> Void

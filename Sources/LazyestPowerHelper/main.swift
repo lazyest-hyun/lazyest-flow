@@ -1,6 +1,6 @@
 import Darwin
 import Foundation
-import MacBootstrapCore
+import LazyestCore
 
 guard PowerHelperConnectionValidator.runtimeConfigurationIsValid else {
   fputs("Invalid power helper installation or client identity.\n", stderr)
@@ -8,7 +8,7 @@ guard PowerHelperConnectionValidator.runtimeConfigurationIsValid else {
 }
 
 let delegate = PowerHelperListenerDelegate()
-let listener = NSXPCListener(machServiceName: MacBootstrapPowerHelper.label)
+let listener = NSXPCListener(machServiceName: LazyestPowerHelper.label)
 listener.delegate = delegate
 listener.resume()
 RunLoop.current.run()

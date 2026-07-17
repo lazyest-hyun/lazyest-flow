@@ -104,10 +104,10 @@ final class Config {
       throw ConfigError.invalidHotkeyField
     }
     let header = """
-      # MacBootstrapAgent app hotkeys.
+      # Lazyest Flow app hotkeys.
       # Format: toggle-app|shortcut|bundle-id|label|enabled
       # Format: hide-all|shortcut
-      # Add, remove, or edit rows from the Agent UI.
+      # Add, remove, or edit rows from the Flow UI.
 
       """
     let appBody = appBindings.map {

@@ -4,9 +4,9 @@ import Foundation
 import IOKit
 import IOKit.ps
 import IOKit.pwr_mgt
-import MacBootstrapCore
+import LazyestCore
 
-let keepAwakeStatusNotification = Notification.Name("MacBootstrapKeepAwakeStatusDidChange")
+let keepAwakeStatusNotification = Notification.Name("LazyestFlowKeepAwakeStatusDidChange")
 
 struct PowerSnapshot: Equatable {
   let onACPower: Bool
@@ -246,7 +246,7 @@ final class KeepAwakeController {
     let result = IOPMAssertionCreateWithName(
       kIOPMAssertionTypeNoIdleSleep as CFString,
       IOPMAssertionLevel(kIOPMAssertionLevelOn),
-      "MacBootstrapAgent sleep mode prevention" as CFString,
+      "LazyestFlow sleep mode prevention" as CFString,
       &id
     )
     guard result == kIOReturnSuccess else {
@@ -343,11 +343,11 @@ private final class PowerHelperManager {
   private func connect() -> NSXPCConnection {
     if let connection { return connection }
     let newConnection = NSXPCConnection(
-      machServiceName: MacBootstrapPowerHelper.label,
+      machServiceName: LazyestPowerHelper.label,
       options: .privileged
     )
     newConnection.remoteObjectInterface = NSXPCInterface(
-      with: MacBootstrapPowerHelperProtocol.self)
+      with: LazyestPowerHelperProtocol.self)
     newConnection.invalidationHandler = { [weak self] in self?.connection = nil }
     newConnection.interruptionHandler = {}
     newConnection.resume()
@@ -359,7 +359,7 @@ private final class PowerHelperManager {
     timeout: TimeInterval = 8,
     completion: @escaping (Bool, String?) -> Void,
     _ body: (
-      MacBootstrapPowerHelperProtocol,
+      LazyestPowerHelperProtocol,
       @escaping (Bool, String?) -> Void
     ) -> Void
   ) {
@@ -374,7 +374,7 @@ private final class PowerHelperManager {
     guard
       let proxy = connect().remoteObjectProxyWithErrorHandler({ error in
         finish(false, error.localizedDescription)
-      }) as? MacBootstrapPowerHelperProtocol
+      }) as? LazyestPowerHelperProtocol
     else {
       finish(false, "Power helper connection unavailable")
       return
@@ -392,8 +392,11 @@ enum PowerHelperMaintenance {
     let helper = PowerHelperManager()
     var finished = false
     var installed = false
-    helper.install { success, _ in
+    helper.install { success, message in
       installed = success
+      if !success, let message, !message.isEmpty {
+        fputs("Power helper registration failed: \(message)\n", stderr)
+      }
       finished = true
     }
     guard wait(until: { finished }, timeout: 120) else { return 1 }

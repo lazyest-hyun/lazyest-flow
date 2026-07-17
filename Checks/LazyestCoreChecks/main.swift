@@ -1,7 +1,7 @@
 import ApplicationServices
 import Darwin
 import Foundation
-import MacBootstrapCore
+import LazyestCore
 
 private var failures: [String] = []
 
@@ -89,7 +89,10 @@ private let karabinerFixture = """
       "selected": true,
       "simple_modifications": [],
       "complex_modifications": {
-        "rules": [{"description":"Unrelated rule","manipulators":[]}]
+        "rules": [
+          {"description":"Unrelated rule","manipulators":[]},
+          {"description":"MacBootstrap: right_command to F18","manipulators":[]}
+        ]
       },
       "devices": []
     }]
@@ -122,8 +125,8 @@ do {
       productID: 50503
     ), "Karabiner layout was not reset")
   check(
-    !resetText.contains(KarabinerConfigEditor.ownedRuleDescription),
-    "Owned global F18 rule survived final reset")
+    resetText.contains("MacBootstrap: right_command to F18"),
+    "Setup-owned global F18 rule was removed by device reset")
   check(resetText.contains("Unrelated rule"), "Unrelated Karabiner rule was removed")
 
   let first = try KarabinerConfigEditor.applyingWindowsLayout(
@@ -137,13 +140,15 @@ do {
       in: firstReset,
       vendorID: 2,
       productID: 20
-    ), "Global F18 rule was removed while another mapped keyboard remained")
+    ), "Second keyboard mapping was removed while resetting the first")
   let finalReset = try KarabinerConfigEditor.resettingWindowsLayout(
     in: firstReset, vendorID: 2, productID: 20)
   check(
-    !String(decoding: finalReset, as: UTF8.self).contains(
-      KarabinerConfigEditor.ownedRuleDescription),
-    "Global F18 rule survived after the last mapped keyboard was reset")
+    !KarabinerConfigEditor.isWindowsLayoutApplied(
+      in: finalReset,
+      vendorID: 2,
+      productID: 20
+    ), "Second keyboard mapping survived its reset")
 
   let allReset = try KarabinerConfigEditor.resettingAllWindowsLayouts(in: second)
   let allResetText = String(decoding: allReset, as: UTF8.self)
@@ -152,16 +157,16 @@ do {
       in: allReset,
       vendorID: 1,
       productID: 10
-    ), "First Agent-owned keyboard mapping survived complete reset")
+    ), "First Flow-owned keyboard mapping survived complete reset")
   check(
     !KarabinerConfigEditor.isWindowsLayoutApplied(
       in: allReset,
       vendorID: 2,
       productID: 20
-    ), "Second Agent-owned keyboard mapping survived complete reset")
+    ), "Second Flow-owned keyboard mapping survived complete reset")
   check(
-    !allResetText.contains(KarabinerConfigEditor.ownedRuleDescription),
-    "Agent-owned global F18 rule survived complete reset")
+    allResetText.contains("MacBootstrap: right_command to F18"),
+    "Setup-owned global F18 rule was removed by complete Flow reset")
   check(
     allResetText.contains("Unrelated rule"),
     "Unrelated Karabiner rule was removed by complete reset"
@@ -174,11 +179,16 @@ private let malformedKarabiner = """
   {"profiles":[{"selected":true,"complex_modifications":{"rules":{"sentinel":"keep"}}}]}
   """.data(using: .utf8)!
 do {
-  _ = try KarabinerConfigEditor.applyingWindowsLayout(
+  let applied = try KarabinerConfigEditor.applyingWindowsLayout(
     to: malformedKarabiner, vendorID: 1, productID: 2)
-  failures.append("Malformed Karabiner nested section was accepted")
+  check(
+    KarabinerConfigEditor.isWindowsLayoutApplied(in: applied, vendorID: 1, productID: 2),
+    "Device mapping was not applied beside an unrelated malformed complex section")
+  check(
+    String(decoding: applied, as: UTF8.self).contains("\"sentinel\""),
+    "Unrelated malformed complex section was changed")
 } catch {
-  // Expected: malformed nested sections must fail closed before writing.
+  failures.append("Device-only mapping rejected an unrelated complex section: \(error)")
 }
 
 private let dockFrame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
@@ -213,10 +223,10 @@ check(
   "Generated legacy login item property list was rejected")
 check(
   LegacyLoginLaunchPolicy.propertyList["KeepAlive"] == nil,
-  "Legacy login item would restart the Agent after an intentional quit")
+  "Legacy login item would restart the Flow after an intentional quit")
 var changedLoginItem = LegacyLoginLaunchPolicy.propertyList
 changedLoginItem["ProgramArguments"] = [
-  "/bin/sh", "-c", "open /Applications/MacBootstrapAgent.app",
+  "/bin/sh", "-c", "open /Applications/Lazyest Flow.app",
 ]
 check(
   !LegacyLoginLaunchPolicy.isManagedPropertyList(changedLoginItem),
@@ -313,7 +323,7 @@ check(
   "Multi-frame screenshot was accepted")
 
 if failures.isEmpty {
-  print("MAC_BOOTSTRAP_CORE_CHECKS_OK")
+  print("LAZYEST_CORE_CHECKS_OK")
 } else {
   for failure in failures {
     fputs("CHECK FAILED: \(failure)\n", stderr)

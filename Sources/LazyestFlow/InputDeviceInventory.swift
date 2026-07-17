@@ -1,11 +1,11 @@
 import Foundation
 import IOKit.hid
-import MacBootstrapCore
+import LazyestCore
 
-let mouseScrollStatusNotification = Notification.Name("MacBootstrapMouseScrollStatusChanged")
+let mouseScrollStatusNotification = Notification.Name("LazyestFlowMouseScrollStatusChanged")
 let inputDeviceInventoryDidChangeNotification = Notification.Name(
-  "MacBootstrapInputDeviceInventoryDidChange")
-let keyboardMappingDidChangeNotification = Notification.Name("MacBootstrapKeyboardMappingDidChange")
+  "LazyestFlowInputDeviceInventoryDidChange")
+let keyboardMappingDidChangeNotification = Notification.Name("LazyestFlowKeyboardMappingDidChange")
 
 struct InputDeviceDescriptor: Hashable {
   let id: String
@@ -36,15 +36,15 @@ enum InputDeviceRole: String, Codable, CaseIterable {
   var title: String {
     switch self {
     case .unknown:
-      return agentText("devices.role.unknown")
+      return flowText("devices.role.unknown")
     case .mouse:
-      return agentText("devices.role.mouse")
+      return flowText("devices.role.mouse")
     case .keyboard:
-      return agentText("devices.role.keyboard")
+      return flowText("devices.role.keyboard")
     case .both:
-      return agentText("devices.role.both")
+      return flowText("devices.role.both")
     case .ignored:
-      return agentText("devices.role.ignored")
+      return flowText("devices.role.ignored")
     }
   }
 
@@ -70,7 +70,7 @@ private final class InputDeviceRoleStore {
   private init() {
     let directory = FileManager.default.urls(
       for: .applicationSupportDirectory, in: .userDomainMask)[0]
-      .appendingPathComponent("MacBootstrapAgent", isDirectory: true)
+      .appendingPathComponent("Lazyest Flow", isDirectory: true)
     let profileURL = directory.appendingPathComponent("input-device-roles.json")
     url = profileURL
     let savedProfiles: [InputDeviceRoleProfile]
@@ -90,32 +90,6 @@ private final class InputDeviceRoleStore {
 
   func role(for device: InputDeviceDescriptor) -> InputDeviceRole {
     rolesByID[device.mappingID] ?? .unknown
-  }
-
-  @discardableResult
-  func observe(_ observedRole: InputDeviceRole, for device: InputDeviceDescriptor) -> Bool {
-    let current = role(for: device)
-    guard current != .ignored else { return false }
-    let merged: InputDeviceRole
-    switch (current, observedRole) {
-    case (.unknown, .mouse), (.mouse, .mouse):
-      merged = .mouse
-    case (.unknown, .keyboard), (.keyboard, .keyboard):
-      merged = .keyboard
-    case (.mouse, .keyboard), (.keyboard, .mouse), (.both, _):
-      merged = .both
-    default:
-      merged = observedRole
-    }
-    guard merged != current else { return false }
-    do {
-      try set(merged, for: device)
-      return true
-    } catch {
-      NSLog(
-        "Failed to persist input device role for %@: %@", device.name, error.localizedDescription)
-      return false
-    }
   }
 
   func set(_ role: InputDeviceRole, for device: InputDeviceDescriptor) throws {
@@ -189,16 +163,17 @@ final class InputDeviceInventory {
 
   func externalKeyboards() -> [InputDeviceDescriptor] {
     keyboardCandidates().filter {
-      roleStore.role(for: $0) == .keyboard || roleStore.role(for: $0) == .both
+      roleStore.role(for: $0) == .keyboard
     }
   }
 
   func externalMice() -> [InputDeviceDescriptor] {
     let devices = allDevices().filter { record in
-      record.usagePage == kHIDPage_GenericDesktop && record.usage == kHIDUsage_GD_Mouse
+      let role = roleStore.role(for: record.descriptor)
+      return record.usagePage == kHIDPage_GenericDesktop
+        && record.usage == kHIDUsage_GD_Mouse
         && !record.builtIn && !record.isVirtual && !record.isTrackpad
-        && (roleStore.role(for: record.descriptor) == .mouse
-          || roleStore.role(for: record.descriptor) == .both)
+        && role != .keyboard && role != .ignored
     }
     .map(\.descriptor)
     let uniqueDevices = Dictionary(
@@ -222,23 +197,24 @@ final class InputDeviceInventory {
   }
 
   func confirmKeyboard(_ device: InputDeviceDescriptor) {
-    if roleStore.observe(.keyboard, for: device) {
+    guard roleStore.role(for: device) != .keyboard else { return }
+    do {
+      try roleStore.set(.keyboard, for: device)
       postInventoryChanged()
+    } catch {
+      NSLog(
+        "Failed to confirm input device as keyboard for %@: %@", device.name,
+        error.localizedDescription)
     }
-  }
-
-  func unclassifiedDevices() -> [InputDeviceDescriptor] {
-    let devices = keyboardCandidates() + mouseCandidates()
-    let uniqueDevices = Dictionary(
-      devices.map { ($0.mappingID, $0) }, uniquingKeysWith: { first, _ in first })
-    return uniqueDevices.values
-      .filter { roleStore.role(for: $0) == .unknown }
-      .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
   }
 
   func assignRole(_ role: InputDeviceRole, to device: InputDeviceDescriptor) throws {
     try roleStore.set(role, for: device)
     postInventoryChanged()
+  }
+
+  func role(for device: InputDeviceDescriptor) -> InputDeviceRole {
+    roleStore.role(for: device)
   }
 
   func recentScrollContext(maxAge: TimeInterval = 0.25) -> ScrollInputContext {
@@ -286,7 +262,7 @@ final class InputDeviceInventory {
 
   private func makeDeviceRecord(_ device: IOHIDDevice) -> DeviceRecord {
     let name =
-      stringProperty(device, key: kIOHIDProductKey as CFString) ?? agentText("devices.unknown")
+      stringProperty(device, key: kIOHIDProductKey as CFString) ?? flowText("devices.unknown")
     let manufacturer = stringProperty(device, key: kIOHIDManufacturerKey as CFString) ?? ""
     let transport = stringProperty(device, key: kIOHIDTransportKey as CFString) ?? ""
     let vendorID = intProperty(device, key: kIOHIDVendorIDKey as CFString)
@@ -320,8 +296,7 @@ final class InputDeviceInventory {
   }
 
   private func deviceDidConnect(_ device: IOHIDDevice) {
-    let record = cachedDeviceRecord(device)
-    classifyConnectedDevice(record)
+    _ = cachedDeviceRecord(device)
     postInventoryChanged()
   }
 
@@ -357,20 +332,6 @@ final class InputDeviceInventory {
         source: source, deviceID: source == .mouse ? record.descriptor.mappingID : nil),
       ProcessInfo.processInfo.systemUptime
     )
-  }
-
-  private func classifyConnectedDevice(_ record: DeviceRecord) {
-    guard !record.builtIn, !record.isVirtual else { return }
-    if record.usagePage == kHIDPage_GenericDesktop,
-      record.usage == kHIDUsage_GD_Keyboard
-    {
-      _ = roleStore.observe(.keyboard, for: record.descriptor)
-    } else if record.usagePage == kHIDPage_GenericDesktop,
-      record.usage == kHIDUsage_GD_Mouse,
-      !record.isTrackpad
-    {
-      _ = roleStore.observe(.mouse, for: record.descriptor)
-    }
   }
 
   private func intProperty(_ device: IOHIDDevice, key: CFString) -> Int {

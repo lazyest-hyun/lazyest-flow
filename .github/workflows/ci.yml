@@ -22,7 +22,7 @@ jobs:
         run: xcrun swift-format lint --recursive Sources Checks Package.swift
 
       - name: Run Core checks
-        run: swift run MacBootstrapCoreChecks
+        run: swift run LazyestCoreChecks
 
       - name: Build release executable
-        run: swift build -c release --product MacBootstrapAgent
+        run: swift build -c release --product LazyestFlow

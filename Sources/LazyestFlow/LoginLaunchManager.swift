@@ -1,6 +1,6 @@
 import Darwin
 import Foundation
-import MacBootstrapCore
+import LazyestCore
 import ServiceManagement
 
 enum LoginLaunchStatus: Equatable {
@@ -21,11 +21,11 @@ enum LoginLaunchError: LocalizedError {
   var errorDescription: String? {
     switch self {
     case .appNotInstalled:
-      return "MacBootstrapAgent.app is not installed in /Applications."
+      return "Lazyest Flow.app is not installed in /Applications."
     case .unsafeLaunchAgentsDirectory:
       return "The user LaunchAgents directory is not a safe local directory."
     case .unsafePropertyList:
-      return "The legacy login item property list is not owned by MacBootstrapAgent."
+      return "The legacy login item property list is not owned by LazyestFlow."
     case .commandFailed(let message):
       return message.isEmpty ? "launchctl could not remove the legacy login item." : message
     case .verificationFailed:
@@ -57,7 +57,7 @@ final class LoginLaunchManager {
   var status: LoginLaunchStatus {
     guard
       fileManager.isExecutableFile(
-        atPath: LegacyLoginLaunchPolicy.installedAgentExecutablePath)
+        atPath: LegacyLoginLaunchPolicy.installedFlowExecutablePath)
     else { return legacyRegistrationExists ? .needsRepair : .appNotInstalled }
 
     switch SMAppService.mainApp.status {
@@ -98,7 +98,7 @@ final class LoginLaunchManager {
   private func enable(refreshRegistration: Bool) throws {
     guard
       fileManager.isExecutableFile(
-        atPath: LegacyLoginLaunchPolicy.installedAgentExecutablePath)
+        atPath: LegacyLoginLaunchPolicy.installedFlowExecutablePath)
     else { throw LoginLaunchError.appNotInstalled }
 
     let service = SMAppService.mainApp

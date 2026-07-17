@@ -7,7 +7,7 @@ source "$SCRIPT_DIR/lib.sh"
 
 parse_common_flags "$@"
 
-echo "BUILD_AGENT"
+echo "BUILD_FLOW"
 echo "  dry-run: $DRY_RUN"
 echo "  package: $ROOT_DIR"
 
@@ -17,12 +17,12 @@ if ! command -v swift >/dev/null 2>&1; then
 fi
 
 if ((DRY_RUN)); then
-  echo "[dry-run] swift build --package-path $ROOT_DIR -c release --product $APP_NAME"
+  echo "[dry-run] swift build --package-path $ROOT_DIR -c release --product $APP_EXECUTABLE"
   echo "[dry-run] swift build --package-path $ROOT_DIR -c release --product $HELPER_NAME"
   exit 0
 fi
 
-if ! swift build --package-path "$ROOT_DIR" -c release --product "$APP_NAME" \
+if ! swift build --package-path "$ROOT_DIR" -c release --product "$APP_EXECUTABLE" \
   || ! swift build --package-path "$ROOT_DIR" -c release --product "$HELPER_NAME"; then
   echo "  blocked: Swift and the active macOS SDK must come from a compatible Xcode or Command Line Tools installation" >&2
   exit 1

@@ -1,6 +1,6 @@
 import Foundation
 
-let dockPinStatusNotification = Notification.Name("MacBootstrapDockPinStatusChanged")
+let dockPinStatusNotification = Notification.Name("LazyestFlowDockPinStatusChanged")
 
 enum DockPinStatus: String {
   case off = "dock.status.off"
@@ -12,27 +12,27 @@ enum DockPinStatus: String {
   case failed = "dock.status.failed"
 
   var localizedText: String {
-    agentText(rawValue)
+    flowText(rawValue)
   }
 }
 
-enum AgentLanguage: String {
+enum FlowLanguage: String {
   case automatic = "auto"
   case english = "en"
   case korean = "ko"
 }
 
-func agentSharedLanguageConfigPath() -> URL {
+func flowSharedLanguageConfigPath() -> URL {
   let base =
     FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
     ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(
       "Library/Application Support", isDirectory: true)
-  return base.appendingPathComponent("MacBootstrapAgent", isDirectory: true).appendingPathComponent(
+  return base.appendingPathComponent("Lazyest Flow", isDirectory: true).appendingPathComponent(
     "language.conf")
 }
 
-func agentSavedLanguageCode() -> String {
-  let path = agentSharedLanguageConfigPath()
+func flowSavedLanguageCode() -> String {
+  let path = flowSharedLanguageConfigPath()
   if let value = try? String(contentsOf: path, encoding: .utf8).trimmingCharacters(
     in: .whitespacesAndNewlines),
     !value.isEmpty
@@ -40,20 +40,20 @@ func agentSavedLanguageCode() -> String {
     return value
   }
   return UserDefaults.standard.string(forKey: "MacBootstrapLanguage")
-    ?? AgentLanguage.automatic.rawValue
+    ?? FlowLanguage.automatic.rawValue
 }
 
-func saveAgentLanguageCode(_ code: String) throws {
-  guard AgentLanguage(rawValue: code) != nil else { return }
-  let path = agentSharedLanguageConfigPath()
+func saveFlowLanguageCode(_ code: String) throws {
+  guard FlowLanguage(rawValue: code) != nil else { return }
+  let path = flowSharedLanguageConfigPath()
   try FileManager.default.createDirectory(
     at: path.deletingLastPathComponent(), withIntermediateDirectories: true)
   try code.write(to: path, atomically: true, encoding: .utf8)
   UserDefaults.standard.set(code, forKey: "MacBootstrapLanguage")
 }
 
-func agentLanguage() -> AgentLanguage {
-  let selected = AgentLanguage(rawValue: agentSavedLanguageCode()) ?? .automatic
+func flowLanguage() -> FlowLanguage {
+  let selected = FlowLanguage(rawValue: flowSavedLanguageCode()) ?? .automatic
   if selected != .automatic {
     return selected
   }
@@ -62,7 +62,7 @@ func agentLanguage() -> AgentLanguage {
 }
 
 private let koreanAgentStrings: [String: String] = [
-  "title": "MacBootstrapAgent",
+  "title": "Lazyest Flow",
   "tab.general": "일반",
   "tab.apps": "앱 단축키",
   "tab.screenshots": "스크린샷",
@@ -70,32 +70,32 @@ private let koreanAgentStrings: [String: String] = [
   "tab.dockPin": "Dock 고정",
   "tab.inputDevices": "입력 장치",
   "general.title": "일반",
-  "general.detail": "Agent의 시작 방식을 설정합니다.",
+  "general.detail": "Flow의 시작 방식을 설정합니다.",
   "general.loginLaunch": "로그인 시 자동 실행",
   "general.loginLaunchDetail":
     "Mac에 로그인하면 설정 창 없이 메뉴 막대에서 시작하며 시스템 설정의 로그인 항목에도 표시됩니다.",
   "general.status.approval": "승인 필요",
   "general.status.repair": "복구 필요",
   "general.status.install": "앱 설치 필요",
-  "general.remove": "Agent 제거",
+  "general.remove": "Flow 제거",
   "general.removeDetail": "앱을 제거하고 초기화 범위를 고릅니다.",
-  "general.removeConfirmTitle": "Agent를 제거할까요?",
+  "general.removeConfirmTitle": "Flow를 제거할까요?",
   "general.removeConfirmDetail":
     "로그인 자동 실행과 전원 보조 도구는 항상 제거합니다. 초기화할 항목을 고르세요. 접근성 허용은 macOS에서 직접 관리합니다.",
   "general.removeConfirm": "제거",
   "general.removeProgress": "제거 중",
-  "general.remove.settings": "Agent 설정 및 단축키 초기화",
+  "general.remove.settings": "Flow 설정 및 단축키 초기화",
   "general.remove.dock": "Dock 반응을 macOS 기본값으로 초기화",
   "general.remove.screenshot": "스크린샷 저장 위치를 macOS 기본값으로 초기화",
-  "general.remove.keyboard": "Agent가 적용한 Karabiner 키보드 매핑 해제",
-  "general.remove.settingsDetail": "다음 설치에서도 유지할 Agent 설정과 앱 단축키",
-  "general.remove.dockDetail": "Agent가 적용한 Dock 자동 숨김 반응 시간",
+  "general.remove.keyboard": "Flow가 적용한 Karabiner 키보드 매핑 해제",
+  "general.remove.settingsDetail": "다음 설치에서도 유지할 Flow 설정과 앱 단축키",
+  "general.remove.dockDetail": "Flow가 적용한 Dock 자동 숨김 반응 시간",
   "general.remove.screenshotDetail": "현재 스크린샷 저장 위치를 macOS 기본값으로 변경",
-  "general.remove.keyboardDetail": "Agent가 추가한 장치별 Option/Command 및 F18 매핑",
-  "general.removeSheet.title": "Agent 제거",
+  "general.remove.keyboardDetail": "Flow가 추가한 장치별 Option/Command 매핑",
+  "general.removeSheet.title": "Flow 제거",
   "general.removeSheet.detail": "앱은 제거하고, 필요한 항목만 선택해 초기화할 수 있습니다.",
   "general.removeSheet.alwaysTitle": "항상 제거됨",
-  "general.removeSheet.alwaysDetail": "MacBootstrapAgent 앱, 로그인 시 자동 실행, 전원 보조 도구",
+  "general.removeSheet.alwaysDetail": "Lazyest Flow 앱, 로그인 시 자동 실행, 전원 보조 도구",
   "general.removeSheet.resetTitle": "추가로 초기화",
   "general.removeSheet.resetDetail": "기본값은 완전 제거입니다. 유지할 항목은 해당 토글을 끄세요.",
   "general.removeSheet.accessibilityNote": "접근성 허용은 macOS에서 관리되어 그대로 남습니다.",
@@ -127,7 +127,7 @@ private let koreanAgentStrings: [String: String] = [
   "devices.mouse.title": "마우스",
   "devices.mouse.reverse": "새 마우스도 세로 스크롤 반전",
   "devices.mouse.reverseDetail": "감지된 마우스의 개별 설정이 우선하며 내장·Magic Trackpad는 제외됩니다.",
-  "devices.mouse.identify": "마우스를 움직이거나 휠을 굴리면 자동으로 식별됩니다.",
+  "devices.mouse.identify": "분류된 외장 마우스가 없습니다.",
   "devices.mouse.mode.inherit": "새 마우스 기본값 따름",
   "devices.mouse.mode.reversed": "세로 스크롤 반전",
   "devices.mouse.mode.system": "macOS 기본 방향",
@@ -136,18 +136,16 @@ private let koreanAgentStrings: [String: String] = [
   "devices.role.keyboard": "키보드로 사용",
   "devices.role.both": "키보드와 마우스",
   "devices.role.ignored": "무시",
-  "devices.unclassified.title": "장치 분류",
-  "devices.unclassified.detail": "자동 감지되지 않는 USB 수신기는 한 번만 종류를 선택하세요.",
+  "devices.role.change": "장치 유형 변경",
   "devices.mouse.status.off": "꺼짐",
   "devices.mouse.status.active": "마우스별 설정 적용 중",
   "devices.mouse.status.needsPermission": "Accessibility 권한 미적용",
   "devices.mouse.status.failed": "스크롤 이벤트 감시 시작 실패",
   "devices.keyboard.title": "키보드",
-  "devices.keyboard.detail":
-    "Option/Command를 Mac 배열로 바꾸고 오른쪽 Option은 Karabiner를 거쳐 F18 한/영 키가 됩니다.",
-  "devices.keyboard.empty": "외장 키보드에서 아무 키나 누르면 자동으로 식별됩니다.",
+  "devices.keyboard.detail": "Windows 키보드의 Option/Command 조작키를 Mac 배열로 바꿉니다.",
+  "devices.keyboard.empty": "분류된 외장 키보드가 없습니다.",
   "devices.keyboard.preset.none": "변경 없음",
-  "devices.keyboard.preset.mac": "Windows → Mac · 오른쪽 Alt 한/영",
+  "devices.keyboard.preset.mac": "Windows → Mac 조작키",
   "devices.keyboard.status.none": "설정 없음",
   "devices.keyboard.status.applied": "적용됨",
   "devices.keyboard.apply": "적용",
@@ -162,7 +160,7 @@ private let koreanAgentStrings: [String: String] = [
   "screenshots.choose": "변경",
   "screenshots.open": "폴더 열기",
   "screenshots.copy": "파일 저장 + 클립보드 복사",
-  "screenshots.copyDetail": "떠 있는 썸네일 없이 캡처 직후 바로 복사합니다.",
+  "screenshots.copyDetail": "떠 있는 썸네일은 유지하고, 캡처 이후 즉시 클립보드에도 복사합니다.",
   "state.on": "켜짐",
   "state.off": "꺼짐",
   "keep.title": "슬립모드 방지",
@@ -222,7 +220,7 @@ private let koreanAgentStrings: [String: String] = [
 ]
 
 private let englishAgentStrings: [String: String] = [
-  "title": "MacBootstrapAgent",
+  "title": "Lazyest Flow",
   "tab.general": "General",
   "tab.apps": "App Hotkeys",
   "tab.screenshots": "Screenshots",
@@ -230,33 +228,33 @@ private let englishAgentStrings: [String: String] = [
   "tab.dockPin": "Dock Pin",
   "tab.inputDevices": "Input Devices",
   "general.title": "General",
-  "general.detail": "Choose how the Agent starts.",
+  "general.detail": "Choose how the Flow starts.",
   "general.loginLaunch": "Start at login",
   "general.loginLaunchDetail":
     "Starts in the menu bar without opening Settings and appears in System Settings Login Items.",
   "general.status.approval": "Approval required",
   "general.status.repair": "Needs repair",
   "general.status.install": "Install app first",
-  "general.remove": "Remove Agent",
+  "general.remove": "Remove Flow",
   "general.removeDetail": "Remove the app and choose what to reset.",
-  "general.removeConfirmTitle": "Remove Agent?",
+  "general.removeConfirmTitle": "Remove Flow?",
   "general.removeConfirmDetail":
     "Start at login and the power helper are always removed. Choose what to reset. Accessibility permission is managed in macOS.",
   "general.removeConfirm": "Remove",
   "general.removeProgress": "Removing",
-  "general.remove.settings": "Reset Agent settings and hotkeys",
+  "general.remove.settings": "Reset Flow settings and hotkeys",
   "general.remove.dock": "Reset Dock response to macOS defaults",
   "general.remove.screenshot": "Reset screenshot location to macOS defaults",
-  "general.remove.keyboard": "Remove Agent-applied Karabiner keyboard mappings",
-  "general.remove.settingsDetail": "Agent settings and app hotkeys to keep for a future install",
-  "general.remove.dockDetail": "Dock auto-hide response time changed by the Agent",
+  "general.remove.keyboard": "Remove Flow-applied Karabiner keyboard mappings",
+  "general.remove.settingsDetail": "Flow settings and app hotkeys to keep for a future install",
+  "general.remove.dockDetail": "Dock auto-hide response time changed by the Flow",
   "general.remove.screenshotDetail":
     "Return the current screenshot save location to macOS defaults",
-  "general.remove.keyboardDetail": "Device Option/Command and F18 mappings added by the Agent",
-  "general.removeSheet.title": "Remove Agent",
+  "general.remove.keyboardDetail": "Per-device Option/Command mappings added by the Flow",
+  "general.removeSheet.title": "Remove Flow",
   "general.removeSheet.detail": "Remove the app, then reset only the items you choose.",
   "general.removeSheet.alwaysTitle": "Always removed",
-  "general.removeSheet.alwaysDetail": "MacBootstrapAgent, Start at Login, and the power helper",
+  "general.removeSheet.alwaysDetail": "Lazyest Flow, Start at Login, and the power helper",
   "general.removeSheet.resetTitle": "Also reset",
   "general.removeSheet.resetDetail":
     "Complete removal is selected by default. Turn off anything you want to keep.",
@@ -291,7 +289,7 @@ private let englishAgentStrings: [String: String] = [
   "devices.mouse.reverse": "Reverse new mice by default",
   "devices.mouse.reverseDetail":
     "Per-device settings take priority; built-in and Magic Trackpads are excluded.",
-  "devices.mouse.identify": "Move a mouse or roll its wheel to identify it automatically.",
+  "devices.mouse.identify": "No classified external mouse is connected.",
   "devices.mouse.mode.inherit": "Follow new-mouse default",
   "devices.mouse.mode.reversed": "Reverse vertical scrolling",
   "devices.mouse.mode.system": "macOS default direction",
@@ -300,19 +298,16 @@ private let englishAgentStrings: [String: String] = [
   "devices.role.keyboard": "Use as keyboard",
   "devices.role.both": "Keyboard and mouse",
   "devices.role.ignored": "Ignore",
-  "devices.unclassified.title": "Device Classification",
-  "devices.unclassified.detail":
-    "Choose a type once for USB receivers that cannot be identified automatically.",
+  "devices.role.change": "Change device type",
   "devices.mouse.status.off": "Off",
   "devices.mouse.status.active": "Per-device settings active",
   "devices.mouse.status.needsPermission": "Accessibility permission not applied",
   "devices.mouse.status.failed": "Failed to start scroll event monitor",
   "devices.keyboard.title": "Keyboard",
-  "devices.keyboard.detail":
-    "Swaps Option/Command for Mac layout; Right Option becomes F18 through Karabiner for input switching.",
-  "devices.keyboard.empty": "Press any key on an external keyboard to identify it automatically.",
+  "devices.keyboard.detail": "Maps a Windows keyboard's Option/Command modifiers to Mac layout.",
+  "devices.keyboard.empty": "No classified external keyboard is connected.",
   "devices.keyboard.preset.none": "No changes",
-  "devices.keyboard.preset.mac": "Windows → Mac · Right Alt input switch",
+  "devices.keyboard.preset.mac": "Windows → Mac modifiers",
   "devices.keyboard.status.none": "Not set",
   "devices.keyboard.status.applied": "Applied",
   "devices.keyboard.apply": "Apply",
@@ -328,7 +323,7 @@ private let englishAgentStrings: [String: String] = [
   "screenshots.choose": "Change",
   "screenshots.open": "Open folder",
   "screenshots.copy": "Save file + copy to clipboard",
-  "screenshots.copyDetail": "Copies immediately after capture without the floating thumbnail.",
+  "screenshots.copyDetail": "Keeps the floating thumbnail and copies to the clipboard immediately after capture.",
   "state.on": "On",
   "state.off": "Off",
   "keep.title": "Prevent Sleep",
@@ -390,7 +385,7 @@ private let englishAgentStrings: [String: String] = [
   "menu.quit": "Quit",
 ]
 
-func agentText(_ key: String) -> String {
-  let strings = agentLanguage() == .korean ? koreanAgentStrings : englishAgentStrings
+func flowText(_ key: String) -> String {
+  let strings = flowLanguage() == .korean ? koreanAgentStrings : englishAgentStrings
   return strings[key] ?? englishAgentStrings[key] ?? key
 }

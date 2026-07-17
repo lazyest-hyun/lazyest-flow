@@ -4,15 +4,19 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-APP_NAME="MacBootstrapAgent"
+APP_NAME="Lazyest Flow"
+APP_EXECUTABLE="LazyestFlow"
+LEGACY_APP_NAME="MacBootstrapAgent"
 BUNDLE_ID="com.estaid.mac-bootstrap-agent"
-HELPER_NAME="MacBootstrapPowerHelper"
+HELPER_NAME="LazyestPowerHelper"
 HELPER_LABEL="$BUNDLE_ID.power-helper"
 HELPER_PLIST="$HELPER_LABEL.plist"
 INSTALLED_HELPER_PATH="/Library/PrivilegedHelperTools/$HELPER_LABEL"
 INSTALLED_HELPER_PLIST="/Library/LaunchDaemons/$HELPER_PLIST"
 APP_PATH="/Applications/$APP_NAME.app"
 CONFIG_DIR="$HOME/Library/Application Support/$APP_NAME"
+LEGACY_APP_PATH="/Applications/$LEGACY_APP_NAME.app"
+LEGACY_CONFIG_DIR="$HOME/Library/Application Support/$LEGACY_APP_NAME"
 LEGACY_LOGIN_LABEL="$BUNDLE_ID.login"
 LEGACY_LOGIN_PLIST="$HOME/Library/LaunchAgents/$LEGACY_LOGIN_LABEL.plist"
 EARLY_LEGACY_PLIST="$HOME/Library/LaunchAgents/$BUNDLE_ID.plist"
@@ -54,7 +58,7 @@ app_version() {
 }
 
 release_binary() {
-  printf '%s\n' "$ROOT_DIR/.build/release/$APP_NAME"
+  printf '%s\n' "$ROOT_DIR/.build/release/$APP_EXECUTABLE"
 }
 
 release_helper_binary() {
@@ -121,9 +125,9 @@ package_app() {
   mkdir -p \
     "$app/Contents/MacOS" \
     "$app/Contents/Resources"
-  cp "$binary" "$app/Contents/MacOS/$APP_NAME"
+  cp "$binary" "$app/Contents/MacOS/$APP_EXECUTABLE"
   cp "$helper_binary" "$app/Contents/MacOS/$HELPER_NAME"
-  chmod +x "$app/Contents/MacOS/$APP_NAME"
+  chmod +x "$app/Contents/MacOS/$APP_EXECUTABLE"
   chmod +x "$app/Contents/MacOS/$HELPER_NAME"
   cp "$ROOT_DIR/Assets/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
   cat >"$app/Contents/Info.plist" <<PLIST
@@ -132,7 +136,7 @@ package_app() {
 <plist version="1.0">
 <dict>
   <key>CFBundleExecutable</key>
-  <string>$APP_NAME</string>
+  <string>$APP_EXECUTABLE</string>
   <key>CFBundleIdentifier</key>
   <string>$BUNDLE_ID</string>
   <key>CFBundleName</key>
@@ -153,7 +157,7 @@ package_app() {
   <true/>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
-  <key>MacBootstrapPowerHelperMaintenanceVersion</key>
+  <key>LazyestPowerHelperMaintenanceVersion</key>
   <integer>2</integer>
   <key>MacBootstrapLoginLaunchMaintenanceVersion</key>
   <integer>2</integer>

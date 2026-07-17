@@ -18,7 +18,7 @@ Commands:
   version     Print the application version.
   audit       Read-only source, app, process, and config summary.
   build       Build the release Swift executable.
-  install     Build and install /Applications/MacBootstrapAgent.app.
+  install     Build and install /Applications/Lazyest Flow.app.
   uninstall   Remove the app while preserving user settings.
 EOF
 }

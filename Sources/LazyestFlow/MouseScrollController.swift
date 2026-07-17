@@ -1,7 +1,7 @@
 import AppKit
 import ApplicationServices
 import Foundation
-import MacBootstrapCore
+import LazyestCore
 
 final class MouseScrollController {
   private let config: Config
@@ -16,7 +16,7 @@ final class MouseScrollController {
     config.reloadBootstrap()
     guard config.mouseScrollReverseEnabled || preferences.hasReversedOverride else {
       stop()
-      postStatus(agentText("devices.mouse.status.off"))
+      postStatus(flowText("devices.mouse.status.off"))
       return
     }
     start()
@@ -30,7 +30,7 @@ final class MouseScrollController {
   private func start() {
     stop()
     guard AXIsProcessTrusted() else {
-      postStatus(agentText("devices.mouse.status.needsPermission"))
+      postStatus(flowText("devices.mouse.status.needsPermission"))
       return
     }
     let mask = CGEventMask(1 << CGEventType.scrollWheel.rawValue)
@@ -38,11 +38,11 @@ final class MouseScrollController {
       self?.handle(type: type, event: event) ?? Unmanaged.passUnretained(event)
     }
     guard host.start() else {
-      postStatus(agentText("devices.mouse.status.failed"))
+      postStatus(flowText("devices.mouse.status.failed"))
       return
     }
     eventTapHost = host
-    postStatus(agentText("devices.mouse.status.active"))
+    postStatus(flowText("devices.mouse.status.active"))
   }
 
   private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {

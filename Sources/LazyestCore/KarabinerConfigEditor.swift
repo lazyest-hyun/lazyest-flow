@@ -18,7 +18,6 @@ public enum KarabinerConfigEditorError: LocalizedError {
 }
 
 public enum KarabinerConfigEditor {
-  public static let ownedRuleDescription = "MacBootstrap: right_command to F18"
   private static let ownedModifierKeys = [
     "left_option", "left_command", "right_option", "right_command",
   ]
@@ -41,7 +40,6 @@ public enum KarabinerConfigEditor {
       throw KarabinerConfigEditorError.selectedProfileMissing
     }
     var profile = profiles[profileIndex]
-    try migrateGlobalF18Rule(in: &profile)
 
     var devices = try objectArray(profile["devices"], section: "profiles[].devices")
     let deviceIndex = devices.firstIndex { matches($0, vendorID: vendorID, productID: productID) }
@@ -109,9 +107,6 @@ public enum KarabinerConfigEditor {
       devices[deviceIndex] = device
     }
     profile["devices"] = devices
-    if !devices.contains(where: hasOwnedDeviceMappings) {
-      try removeOwnedGlobalRules(in: &profile)
-    }
     profiles[profileIndex] = profile
     root["profiles"] = profiles
     return try encoded(root)
@@ -135,7 +130,6 @@ public enum KarabinerConfigEditor {
         devices[deviceIndex] = device
       }
       profile["devices"] = devices
-      try removeOwnedGlobalRules(in: &profile)
       profiles[profileIndex] = profile
     }
     root["profiles"] = profiles
@@ -150,7 +144,6 @@ public enum KarabinerConfigEditor {
     guard let root = try? rootObject(from: data),
       let profiles = try? profiles(from: root),
       let profile = profiles.first(where: { ($0["selected"] as? Bool) == true }),
-      hasOwnedComplexRule(profile),
       let devices = profile["devices"] as? [[String: Any]],
       let device = devices.first(where: { matches($0, vendorID: vendorID, productID: productID) }),
       let modifications = device["simple_modifications"] as? [[String: Any]]
@@ -170,55 +163,6 @@ public enum KarabinerConfigEditor {
     return expected.allSatisfy { actual[$0.key] == $0.value }
   }
 
-  private static func migrateGlobalF18Rule(in profile: inout [String: Any]) throws {
-    var simpleModifications = try objectArray(
-      profile["simple_modifications"],
-      section: "profiles[].simple_modifications"
-    )
-    simpleModifications.removeAll {
-      sourceKey(in: $0) == "right_command" && destinationKey(in: $0) == "f18"
-    }
-    profile["simple_modifications"] = simpleModifications
-
-    var complex = try object(
-      profile["complex_modifications"], section: "profiles[].complex_modifications")
-    var rules = try objectArray(complex["rules"], section: "profiles[].complex_modifications.rules")
-    rules.removeAll { ($0["description"] as? String) == ownedRuleDescription }
-    rules.append([
-      "description": ownedRuleDescription,
-      "manipulators": [
-        [
-          "type": "basic",
-          "from": [
-            "key_code": "right_command",
-            "modifiers": ["optional": ["any"]],
-          ],
-          "to": [["key_code": "f18"]],
-        ]
-      ],
-    ])
-    complex["rules"] = rules
-    profile["complex_modifications"] = complex
-  }
-
-  private static func removeOwnedGlobalRules(in profile: inout [String: Any]) throws {
-    var simpleModifications = try objectArray(
-      profile["simple_modifications"],
-      section: "profiles[].simple_modifications"
-    )
-    simpleModifications.removeAll {
-      sourceKey(in: $0) == "right_command" && destinationKey(in: $0) == "f18"
-    }
-    profile["simple_modifications"] = simpleModifications
-
-    var complex = try object(
-      profile["complex_modifications"], section: "profiles[].complex_modifications")
-    var rules = try objectArray(complex["rules"], section: "profiles[].complex_modifications.rules")
-    rules.removeAll { ($0["description"] as? String) == ownedRuleDescription }
-    complex["rules"] = rules
-    profile["complex_modifications"] = complex
-  }
-
   private static func hasOwnedDeviceMappings(_ device: [String: Any]) -> Bool {
     guard let modifications = device["simple_modifications"] as? [[String: Any]] else {
       return false
@@ -233,13 +177,6 @@ public enum KarabinerConfigEditor {
       actual[source] = destination
     }
     return ownedSimpleMappings.allSatisfy { actual[$0.key] == $0.value }
-  }
-
-  private static func hasOwnedComplexRule(_ profile: [String: Any]) -> Bool {
-    guard let complex = profile["complex_modifications"] as? [String: Any],
-      let rules = complex["rules"] as? [[String: Any]]
-    else { return false }
-    return rules.contains { ($0["description"] as? String) == ownedRuleDescription }
   }
 
   private static func matches(_ device: [String: Any], vendorID: Int, productID: Int) -> Bool {

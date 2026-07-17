@@ -1,5 +1,35 @@
 import AppKit
 
+class AdaptiveCardStackView: NSStackView {
+  override init(frame frameRect: NSRect) {
+    super.init(frame: frameRect)
+    wantsLayer = true
+    layer?.cornerRadius = 8
+    layer?.borderWidth = 1
+    updateCardAppearance()
+  }
+
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  override func viewDidChangeEffectiveAppearance() {
+    super.viewDidChangeEffectiveAppearance()
+    updateCardAppearance()
+  }
+
+  private func updateCardAppearance() {
+    guard let layer else { return }
+    effectiveAppearance.performAsCurrentDrawingAppearance {
+      let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+      layer.backgroundColor = NSColor.controlBackgroundColor
+        .withAlphaComponent(isDark ? 0.35 : 0.9).cgColor
+      layer.borderColor = NSColor.separatorColor
+        .withAlphaComponent(isDark ? 0.28 : 0.5).cgColor
+    }
+  }
+}
+
 final class BindingRow {
   var binding: AppBinding
   var draftShortcut = ""
@@ -21,7 +51,7 @@ final class BindingRow {
     self.shortcutField = ShortcutCaptureField(string: binding.shortcut)
     self.shortcutField.lastCompleteShortcut = binding.shortcut
     self.enabledSwitch = NSSwitch(frame: .zero)
-    self.editButton = NSButton(title: agentText("apps.editRow"), target: nil, action: nil)
+    self.editButton = NSButton(title: flowText("apps.editRow"), target: nil, action: nil)
     self.removeButton = NSButton(title: "", target: nil, action: nil)
     if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: binding.bundleID) {
       self.iconView.image = NSWorkspace.shared.icon(forFile: appURL.path)
@@ -37,8 +67,8 @@ final class BindingRow {
     self.bundleID.textColor = .secondaryLabelColor
     self.bundleID.lineBreakMode = .byTruncatingHead
     self.enabledSwitch.state = binding.isEnabled ? .on : .off
-    self.enabledSwitch.toolTip = agentText("apps.enabled")
-    self.enabledSwitch.setAccessibilityLabel("\(binding.label) \(agentText("apps.enabled"))")
+    self.enabledSwitch.toolTip = flowText("apps.enabled")
+    self.enabledSwitch.setAccessibilityLabel("\(binding.label) \(flowText("apps.enabled"))")
     setEditing(false)
   }
 
@@ -60,18 +90,18 @@ final class BindingRow {
     shortcutField.isBordered = editing
     shortcutField.drawsBackground = editing
     shortcutField.backgroundColor = editing ? .textBackgroundColor : .clear
-    editButton.title = editing ? agentText("apps.applyRow") : agentText("apps.editRow")
+    editButton.title = editing ? flowText("apps.applyRow") : flowText("apps.editRow")
     if editing {
       draftShortcut = binding.shortcut
       shortcutField.lastCompleteShortcut = binding.shortcut
-      shortcutField.placeholderString = agentText("apps.editShortcutHint")
+      shortcutField.placeholderString = flowText("apps.editShortcutHint")
     } else {
       removeButton.title = ""
       removeButton.image = NSImage(
-        systemSymbolName: "trash", accessibilityDescription: agentText("apps.remove"))
+        systemSymbolName: "trash", accessibilityDescription: flowText("apps.remove"))
       removeButton.imagePosition = .imageOnly
       removeButton.contentTintColor = .systemRed
-      removeButton.toolTip = agentText("apps.remove")
+      removeButton.toolTip = flowText("apps.remove")
     }
     refreshEnabledAppearance()
   }
@@ -108,7 +138,7 @@ final class ShortcutCaptureField: NSTextField {
 
   override func becomeFirstResponder() -> Bool {
     if stringValue.isEmpty {
-      placeholderString = agentText("apps.editShortcutHint")
+      placeholderString = flowText("apps.editShortcutHint")
     }
     onFocus?()
     return true
@@ -217,16 +247,19 @@ final class SettingsTabButton: NSButton {
 
   private func updateAppearance() {
     guard let layer else { return }
-    layer.backgroundColor =
-      (isSelectedTab
-      ? NSColor.controlAccentColor.withAlphaComponent(0.2)
-      : NSColor.controlBackgroundColor.withAlphaComponent(0.55)).cgColor
-    layer.borderWidth = 1
-    layer.borderColor =
-      (isSelectedTab
-      ? NSColor.controlAccentColor.withAlphaComponent(0.45)
-      : NSColor.separatorColor.withAlphaComponent(0.4)).cgColor
-    tabLabel.textColor = isSelectedTab ? .labelColor : .secondaryLabelColor
-    tabIcon.contentTintColor = isSelectedTab ? .controlAccentColor : .secondaryLabelColor
+    effectiveAppearance.performAsCurrentDrawingAppearance {
+      let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+      layer.backgroundColor =
+        (isSelectedTab
+        ? NSColor.controlAccentColor.withAlphaComponent(isDark ? 0.2 : 0.12)
+        : NSColor.controlBackgroundColor.withAlphaComponent(isDark ? 0.55 : 0.72)).cgColor
+      layer.borderWidth = 1
+      layer.borderColor =
+        (isSelectedTab
+        ? NSColor.controlAccentColor.withAlphaComponent(isDark ? 0.45 : 0.35)
+        : NSColor.separatorColor.withAlphaComponent(isDark ? 0.4 : 0.55)).cgColor
+      tabLabel.textColor = isSelectedTab ? .labelColor : .secondaryLabelColor
+      tabIcon.contentTintColor = isSelectedTab ? .controlAccentColor : .secondaryLabelColor
+    }
   }
 }
