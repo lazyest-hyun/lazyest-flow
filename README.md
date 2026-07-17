@@ -1,6 +1,6 @@
 # Lazyest Flow
 
-한국어 사용자를 위한 상시 실행 macOS 메뉴 막대 앱입니다. 일회성 초기 설정 도구인 [mac-bootstrap](https://github.com/hyunn515/mac-bootstrap)과 독립적으로 설치하고 업데이트합니다.
+한국어 사용자를 위한 상시 실행 macOS 메뉴 막대 앱입니다. 일회성 초기 설정 도구인 [Lazyest Setup](https://github.com/hyunn515/lazyest-setup)과 독립적으로 설치하고 업데이트합니다.
 
 이 저장소는 빌드된 앱이나 자동 업데이트를 배포하지 않습니다. 사용자는 소스를 확인한 뒤 자신의 Mac에서 직접 빌드합니다.
 
@@ -9,7 +9,7 @@
 사용자가 **설치**를 명시적으로 요청했다면, 추가 조사나 dry-run 없이 아래 한 명령으로 설치하고 실행합니다.
 
 ```sh
-(workdir="$(mktemp -d)" && trap 'rm -rf "$workdir"' EXIT && git clone --depth 1 --quiet https://github.com/hyunn515/mac-bootstrap-agent.git "$workdir" && "$workdir/bootstrap.sh" install && open "/Applications/Lazyest Flow.app")
+(workdir="$(mktemp -d)" && trap 'rm -rf "$workdir"' EXIT && git clone --depth 1 --quiet https://github.com/hyunn515/lazyest-flow.git "$workdir" && "$workdir/bootstrap.sh" install && open "/Applications/Lazyest Flow.app")
 ```
 
 - 최신 소스만 얕게 받아 현재 Mac에서 빌드하고 `/Applications/Lazyest Flow.app`에 설치한 뒤 임시 소스와 빌드 산출물을 제거합니다.
@@ -39,8 +39,8 @@
 macOS 13 이상과 Swift 도구 모음이 필요합니다.
 
 ```sh
-git clone https://github.com/hyunn515/mac-bootstrap-agent.git
-cd mac-bootstrap-agent
+git clone https://github.com/hyunn515/lazyest-flow.git
+cd lazyest-flow
 ./bootstrap.sh audit
 ./bootstrap.sh install
 open "/Applications/Lazyest Flow.app"
