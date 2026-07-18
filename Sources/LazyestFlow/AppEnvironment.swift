@@ -74,6 +74,10 @@ private let koreanAgentStrings: [String: String] = [
   "general.loginLaunch": "로그인 시 자동 실행",
   "general.loginLaunchDetail":
     "Mac에 로그인하면 설정 창 없이 메뉴 막대에서 시작하며 시스템 설정의 로그인 항목에도 표시됩니다.",
+  "general.permissions": "권한 안내",
+  "general.permissionsDetail":
+    "앱 단축키, 마우스 스크롤, 덮개 잠금, Dock 고정만 손쉬운 사용 권한을 사용합니다. 슬립모드 방지와 기본 설정은 이 권한 없이 사용할 수 있습니다.",
+  "general.permissionsOpen": "권한 설정",
   "general.status.approval": "승인 필요",
   "general.status.repair": "복구 필요",
   "general.status.install": "앱 설치 필요",
@@ -232,6 +236,10 @@ private let englishAgentStrings: [String: String] = [
   "general.loginLaunch": "Start at login",
   "general.loginLaunchDetail":
     "Starts in the menu bar without opening Settings and appears in System Settings Login Items.",
+  "general.permissions": "Permissions",
+  "general.permissionsDetail":
+    "Only app hotkeys, mouse scrolling, lid lock, and Dock pin use Accessibility permission. Prevent Sleep and basic settings work without it.",
+  "general.permissionsOpen": "Open Settings",
   "general.status.approval": "Approval required",
   "general.status.repair": "Needs repair",
   "general.status.install": "Install app first",

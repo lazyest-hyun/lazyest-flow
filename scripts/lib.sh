@@ -83,8 +83,12 @@ sign_app() {
     local identity
     identity="$(codesign_identity)"
     echo "  codesign: $identity"
-    if codesign --force --options runtime --sign "$identity" "$helper" \
-      && codesign --force --options runtime --sign "$identity" "$app"; then
+    local timestamp=(--timestamp=none)
+    if [[ "$identity" == Developer\ ID\ Application:* ]]; then
+      timestamp=(--timestamp)
+    fi
+    if codesign --force --options runtime "${timestamp[@]}" --sign "$identity" "$helper" \
+      && codesign --force --options runtime "${timestamp[@]}" --sign "$identity" "$app"; then
       return
     fi
     echo "  warning: stable codesign failed; using ad-hoc signing"

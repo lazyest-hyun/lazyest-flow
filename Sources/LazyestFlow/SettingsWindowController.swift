@@ -20,6 +20,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   private var removalSheet: FlowRemovalSheetController?
   private lazy var loginLaunchSwitch = settingSwitch(action: #selector(toggleLoginLaunch))
   private let loginLaunchStatusLabel = NSTextField(labelWithString: "")
+  private lazy var generalPermissionButton = actionButton(
+    title: flowText("general.permissionsOpen"), action: #selector(openAccessibilitySettings))
   private lazy var removeAgentButton: NSButton = {
     let button = actionButton(title: flowText("general.remove"), action: #selector(removeAgent))
     button.contentTintColor = .systemRed
@@ -772,6 +774,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         title: flowText("general.loginLaunch"),
         detail: flowText("general.loginLaunchDetail"),
         control: controls
+      ))
+    root.addArrangedSubview(separator())
+    root.addArrangedSubview(
+      settingRow(
+        title: flowText("general.permissions"),
+        detail: flowText("general.permissionsDetail"),
+        control: generalPermissionButton
       ))
     root.addArrangedSubview(separator())
     configureLanguagePopup()
