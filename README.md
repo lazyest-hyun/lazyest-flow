@@ -1,6 +1,6 @@
 # Lazyest Flow
 
-한국어 사용자를 위한 상시 실행 macOS 메뉴 막대 앱입니다. 일회성 초기 설정 도구인 [Lazyest Setup](https://github.com/hyunn515/lazyest-setup)과 독립적으로 설치하고 업데이트합니다.
+한국어 사용자를 위한 상시 실행 macOS 메뉴 막대 앱입니다. 일회성 초기 설정 도구인 [Lazyest Setup](https://github.com/lazyest-hyun/lazyest-setup)과 독립적으로 설치하고 업데이트합니다.
 
 이 저장소는 빌드된 앱이나 자동 업데이트를 배포하지 않습니다. 사용자는 소스를 확인한 뒤 자신의 Mac에서 직접 빌드합니다.
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.0 - 2026-07-18
+
+- Explained which features require Accessibility permission and which work without it.
+- Added Developer ID signing, notarization, Gatekeeper verification, and SHA-256 release packaging.
+
 ## 0.5.0 - 2026-07-17
 
 - Rebranded the menu bar app, Swift package, executables, and source modules as Lazyest Flow.
