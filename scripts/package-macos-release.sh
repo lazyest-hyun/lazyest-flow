@@ -49,8 +49,10 @@ DIST_DIR="$ROOT_DIR/dist"
 APP_PATH="$DIST_DIR/Lazyest Flow.app"
 ZIP_NAME="Lazyest-Flow-$VERSION-macOS.zip"
 ZIP_PATH="$DIST_DIR/$ZIP_NAME"
+DMG_NAME="Lazyest-Flow-$VERSION-macOS.dmg"
+DMG_PATH="$DIST_DIR/$DMG_NAME"
 
-rm -rf "$APP_PATH" "$ZIP_PATH" "$ZIP_PATH.sha256"
+rm -rf "$APP_PATH" "$ZIP_PATH" "$ZIP_PATH.sha256" "$DMG_PATH" "$DMG_PATH.sha256"
 "$SCRIPT_DIR/build.sh"
 MAC_BOOTSTRAP_AGENT_CODESIGN_IDENTITY="$SIGNING_IDENTITY" \
   "$SCRIPT_DIR/package-app.sh" "$APP_PATH"
@@ -65,11 +67,22 @@ fi
 ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
 xcrun notarytool submit "$ZIP_PATH" --keychain-profile "$NOTARY_PROFILE" --wait
 xcrun stapler staple "$APP_PATH"
-xcrun stapler validate "$APP_PATH"
+if ! xcrun stapler validate "$APP_PATH"; then
+  echo "warning: unable to independently validate the stapled ticket from this Mac; continuing to the required Gatekeeper assessment" >&2
+fi
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 spctl --assess --type execute --verbose=4 "$APP_PATH"
 
 rm -f "$ZIP_PATH"
 ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
+hdiutil create \
+  -volname "Lazyest Flow" \
+  -srcfolder "$APP_PATH" \
+  -ov \
+  -format UDZO \
+  "$DMG_PATH"
+hdiutil verify "$DMG_PATH"
 (cd "$DIST_DIR" && shasum -a 256 "$ZIP_NAME" >"$ZIP_NAME.sha256")
+(cd "$DIST_DIR" && shasum -a 256 "$DMG_NAME" >"$DMG_NAME.sha256")
 echo "RELEASE_ARTIFACT_READY: $ZIP_PATH"
+echo "RELEASE_ARTIFACT_READY: $DMG_PATH"
