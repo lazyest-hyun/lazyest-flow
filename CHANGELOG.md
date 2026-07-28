@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.0 - 2026-07-28
+
+- Kept Mission Control, Application Windows, and Desktop Hot Corners usable on secondary displays by invoking the matching macOS system action without passing a Dock edge event.
+- Stopped re-triggering the pinned display's Dock from app restarts or periodic recovery; relocation now follows only an explicit enable or display change.
+- Replaced duplicate save and clipboard capture paths with one native clipboard capture whose PNG is also saved and previewed.
+- Added a latest-only Flow preview with click-to-open, file drag, copy, Finder reveal, and sharing actions.
+- Preserved uninterrupted clicks during rapid consecutive captures while immediately replacing the preview with the newest screenshot.
+
 ## 1.0.0 - 2026-07-18
 
 - Explained which features require Accessibility permission and which work without it.

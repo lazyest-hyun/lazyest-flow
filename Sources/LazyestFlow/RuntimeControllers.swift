@@ -11,13 +11,17 @@ final class DockPinController {
   private struct DisplayInfo {
     let id: UInt32
     let frame: CGRect
-    let appKitFrame: CGRect
   }
 
   private struct BlockedDisplayRegion {
     let displayID: UInt32
+    let frame: CGRect
     let triggerZone: CGRect
-    let appKitTriggerZone: CGRect
+  }
+
+  private struct HotCornerBinding {
+    let action: Int
+    let requiredModifiers: CGEventFlags
   }
 
   private final class RelocationToken {
@@ -45,9 +49,8 @@ final class DockPinController {
   private var blockedDisplayRegions: [BlockedDisplayRegion] = []
   private var cachedTargetDisplayID: UInt32?
   private var cachedTargetQuartzFrame: CGRect?
-  private var cachedTargetAppKitFrame: CGRect?
-  private var cachedMainDisplayQuartzMaxY: CGFloat = 0
   private var cachedDockEdge: DockEdge = .bottom
+  private var hotCornerBindings: [ScreenCorner: HotCornerBinding] = [:]
   private var isMonitoring = false
   private var dockIsOnTarget = false
   private(set) var status: DockPinStatus = .off
@@ -55,14 +58,20 @@ final class DockPinController {
   private var permissionTimer: Timer?
   private var hasLoadedInitialState = false
   private var wasEnabled = false
+  private var lastConfiguredTargetDisplayID: UInt32?
   private var pendingRelocation = false
   private var isRelocating = false
   private var relocationToken: RelocationToken?
   private var blockStatusVisible = false
   private var lastBlockedMovementUptime: TimeInterval = 0
   private var blockStatusResetWork: DispatchWorkItem?
+  private var hotCornerActionLatched = false
   private let syntheticEventMarker: Int64 = 0xD0C4_A5C4
   private let dockTriggerSize: CGFloat = 10
+  private let hotCornerZoneSize: CGFloat = 1
+  private let hotCornerModifierMask: CGEventFlags = [
+    .maskShift, .maskControl, .maskAlternate, .maskCommand,
+  ]
 
   init(config: Config) {
     self.config = config
@@ -75,9 +84,13 @@ final class DockPinController {
   func reload() {
     config.reloadBootstrap()
     let enabled = config.dockPinEnabled
-    if enabled, !hasLoadedInitialState || !wasEnabled {
+    let targetChanged =
+      hasLoadedInitialState
+      && lastConfiguredTargetDisplayID != config.dockPinDisplayID
+    if enabled, (hasLoadedInitialState && !wasEnabled) || targetChanged {
       pendingRelocation = true
     }
+    lastConfiguredTargetDisplayID = config.dockPinDisplayID
     hasLoadedInitialState = true
     wasEnabled = enabled
 
@@ -90,12 +103,7 @@ final class DockPinController {
       }
       if pendingRelocation, isMonitoring {
         pendingRelocation = false
-        refreshDockPlacementState()
-        if dockIsOnTarget {
-          postCurrentStatus()
-        } else {
-          relocateDockToTarget()
-        }
+        relocateDockToTarget()
       } else {
         refreshDockPlacementState()
       }
@@ -118,6 +126,7 @@ final class DockPinController {
     }
     blockStatusVisible = false
     lastBlockedMovementUptime = 0
+    hotCornerActionLatched = false
     blockStatusResetWork?.cancel()
     blockStatusResetWork = nil
     if let eventTap {
@@ -158,7 +167,12 @@ final class DockPinController {
     }
     cachedDockOrientation = dockOrientation()
     rebuildBlockedDisplayRegions()
-    let eventMask = CGEventMask(1 << CGEventType.mouseMoved.rawValue)
+    let eventTypes: [CGEventType] = [
+      .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged,
+    ]
+    let eventMask = eventTypes.reduce(CGEventMask(0)) { mask, type in
+      mask | CGEventMask(1 << type.rawValue)
+    }
     let callback: CGEventTapCallBack = { _, type, event, context in
       guard let context else { return Unmanaged.passUnretained(event) }
       let controller = Unmanaged<DockPinController>.fromOpaque(context).takeUnretainedValue()
@@ -219,6 +233,7 @@ final class DockPinController {
 
   private func verifyPermissionsAndTapValidity() {
     guard config.dockPinEnabled else { return }
+    refreshHotCornerBindings()
     let currentOrientation = dockOrientation()
     if currentOrientation != cachedDockOrientation {
       cachedDockOrientation = currentOrientation
@@ -242,7 +257,6 @@ final class DockPinController {
       if currentID != targetID {
         dockIsOnTarget = false
         postStatus(.moveFailed)
-        relocateDockToTarget()
       } else if !dockIsOnTarget {
         dockIsOnTarget = true
         postCurrentStatus()
@@ -289,35 +303,49 @@ final class DockPinController {
   }
 
   private func handleMouseEvent(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
-    guard type == .mouseMoved else { return Unmanaged.passUnretained(event) }
+    guard
+      type == .mouseMoved || type == .leftMouseDragged || type == .rightMouseDragged
+        || type == .otherMouseDragged
+    else {
+      return Unmanaged.passUnretained(event)
+    }
     if isRelocating {
       return event.getIntegerValueField(.eventSourceUserData) == syntheticEventMarker
         ? Unmanaged.passUnretained(event)
         : nil
     }
     guard isMonitoring else { return Unmanaged.passUnretained(event) }
-    guard shouldBlockDockTrigger(at: event.location) else {
+    guard shouldBlockDockTrigger(at: event.location, flags: event.flags) else {
       return Unmanaged.passUnretained(event)
     }
     return nil
   }
 
-  private func shouldBlockDockTrigger(at location: CGPoint) -> Bool {
+  private func shouldBlockDockTrigger(at location: CGPoint, flags: CGEventFlags) -> Bool {
     guard let targetID = cachedTargetDisplayID else { return false }
     if cachedTargetQuartzFrame?.contains(location) == true {
-      return false
-    }
-    let appKitLocation = CGPoint(
-      x: location.x,
-      y: cachedMainDisplayQuartzMaxY - location.y
-    )
-    if cachedTargetAppKitFrame?.contains(appKitLocation) == true {
+      hotCornerActionLatched = false
       return false
     }
     for region in blockedDisplayRegions {
-      if region.triggerZone.contains(location)
-        || region.appKitTriggerZone.contains(appKitLocation)
-      {
+      if region.triggerZone.contains(location) {
+        let corner = DockEdgeTriggerPolicy.matchingHotCorner(
+          at: location,
+          in: region.frame,
+          edge: cachedDockEdge,
+          activeCorners: Set(hotCornerBindings.keys),
+          originAtTop: true,
+          size: hotCornerZoneSize
+        )
+        if let corner, let binding = hotCornerBindings[corner],
+          hotCornerModifiersMatch(binding.requiredModifiers, eventFlags: flags)
+        {
+          if !hotCornerActionLatched {
+            hotCornerActionLatched = true
+            triggerNativeHotCornerAction(binding.action)
+          }
+          return true
+        }
         reportBlockedMovement(
           displayID: region.displayID,
           targetID: targetID,
@@ -327,7 +355,35 @@ final class DockPinController {
         return true
       }
     }
+    hotCornerActionLatched = false
     return false
+  }
+
+  private func hotCornerModifiersMatch(
+    _ requiredModifiers: CGEventFlags,
+    eventFlags: CGEventFlags
+  ) -> Bool {
+    eventFlags.intersection(hotCornerModifierMask)
+      == requiredModifiers.intersection(hotCornerModifierMask)
+  }
+
+  private func triggerNativeHotCornerAction(_ action: Int) {
+    guard
+      let argument = DockEdgeTriggerPolicy.missionControlArgument(forHotCornerAction: action)
+    else {
+      NSLog("Dock pin blocked unsupported Hot Corner action \(action)")
+      return
+    }
+
+    let applicationURL = URL(fileURLWithPath: "/System/Applications/Mission Control.app")
+    let configuration = NSWorkspace.OpenConfiguration()
+    configuration.arguments = [argument]
+    NSWorkspace.shared.openApplication(at: applicationURL, configuration: configuration) {
+      _, error in
+      if let error {
+        NSLog("Dock pin failed to invoke Hot Corner action \(action): \(error)")
+      }
+    }
   }
 
   private func reportBlockedMovement(
@@ -366,34 +422,56 @@ final class DockPinController {
   }
 
   private func rebuildBlockedDisplayRegions() {
+    refreshHotCornerBindings()
     cachedTargetDisplayID = targetDisplayID()
     cachedDockEdge = DockEdge(rawValue: cachedDockOrientation) ?? .bottom
     guard let targetID = cachedTargetDisplayID,
       let targetDisplay = availableDisplays.first(where: { $0.id == targetID })
     else {
       cachedTargetQuartzFrame = nil
-      cachedTargetAppKitFrame = nil
       blockedDisplayRegions = []
       return
     }
     cachedTargetQuartzFrame = targetDisplay.frame
-    cachedTargetAppKitFrame = targetDisplay.appKitFrame
     blockedDisplayRegions = availableDisplays.compactMap { display in
       guard display.id != targetID else { return nil }
       return BlockedDisplayRegion(
         displayID: display.id,
+        frame: display.frame,
         triggerZone: DockEdgeTriggerPolicy.triggerZone(
           in: display.frame,
-          edge: cachedDockEdge,
-          thickness: dockTriggerSize
-        ),
-        appKitTriggerZone: DockEdgeTriggerPolicy.triggerZone(
-          in: display.appKitFrame,
           edge: cachedDockEdge,
           thickness: dockTriggerSize
         )
       )
     }
+  }
+
+  private func refreshHotCornerBindings() {
+    let domain = "com.apple.dock" as CFString
+    let keys: [(String, String, ScreenCorner)] = [
+      ("wvous-tl-corner", "wvous-tl-modifier", .topLeft),
+      ("wvous-tr-corner", "wvous-tr-modifier", .topRight),
+      ("wvous-bl-corner", "wvous-bl-modifier", .bottomLeft),
+      ("wvous-br-corner", "wvous-br-modifier", .bottomRight),
+    ]
+    hotCornerBindings = Dictionary(
+      uniqueKeysWithValues: keys.compactMap { actionKey, modifierKey, corner in
+        guard
+          let action = CFPreferencesCopyAppValue(actionKey as CFString, domain) as? NSNumber,
+          action.intValue >= 2
+        else { return nil }
+        let modifier =
+          CFPreferencesCopyAppValue(modifierKey as CFString, domain) as? NSNumber
+        return (
+          corner,
+          HotCornerBinding(
+            action: action.intValue,
+            requiredModifiers: CGEventFlags(rawValue: modifier?.uint64Value ?? 0)
+          )
+        )
+      }
+    )
   }
 
   private func relocateDockToTarget() {
@@ -527,14 +605,10 @@ final class DockPinController {
       availableDisplays = []
       return
     }
-    let appKitFrames = Dictionary(
-      uniqueKeysWithValues: NSScreen.screens.map { (displayID(for: $0), $0.frame) }
-    )
-    cachedMainDisplayQuartzMaxY = CGDisplayBounds(CGMainDisplayID()).maxY
     availableDisplays = displayIDs.prefix(Int(displayCount)).compactMap { id in
       let frame = CGDisplayBounds(id)
       guard frame.width > 0, frame.height > 0 else { return nil }
-      return DisplayInfo(id: id, frame: frame, appKitFrame: appKitFrames[id] ?? frame)
+      return DisplayInfo(id: id, frame: frame)
     }
   }
 
@@ -630,6 +704,7 @@ final class ScreenshotWatcher {
   private let config: Config
   private var timer: Timer?
   private var shortcutTap: EventTapHost?
+  private var shortcutMouseTap: EventTapHost?
   private var directorySource: DispatchSourceFileSystemObject?
   private var scheduledScan: DispatchWorkItem?
   private var scheduledRetry: DispatchWorkItem?
@@ -640,9 +715,17 @@ final class ScreenshotWatcher {
   private var monitoringGeneration: UInt64 = 0
   private var monitoringStartedAt = Date.distantFuture
   private var interactiveCaptureMode: InteractiveCaptureMode?
+  private var interactivePasteboardChangeCount: Int?
   private var selectionStart: CGPoint?
   private var selectedWindowID: CGWindowID?
   private var immediatelyCopiedCaptures: [Date] = []
+  private var nativeCaptureSequence: UInt64 = 0
+  private let screenshotPreviewController = ScreenshotPreviewController()
+  private let screenshotControlQueue = DispatchQueue(
+    label: "com.lazyest.flow.screenshot-control",
+    qos: .userInteractive
+  )
+  private let nativeCaptureMarker: Int64 = 0x4C_46_4E_43
   private let imageExtensions = Set(["png", "jpg", "jpeg", "tif", "tiff", "heic"])
   private let maxRetryCount = 50
   private let trackedFileLifetime: TimeInterval = 120
@@ -682,7 +765,10 @@ final class ScreenshotWatcher {
     timer = nil
     shortcutTap?.stop()
     shortcutTap = nil
+    shortcutMouseTap?.stop()
+    shortcutMouseTap = nil
     interactiveCaptureMode = nil
+    interactivePasteboardChangeCount = nil
     selectionStart = nil
     selectedWindowID = nil
     scheduledScan?.cancel()
@@ -694,6 +780,7 @@ final class ScreenshotWatcher {
     seenPaths.removeAll(keepingCapacity: true)
     pendingPaths.removeAll()
     immediatelyCopiedCaptures.removeAll()
+    nativeCaptureSequence &+= 1
   }
 
   func reload() {
@@ -753,16 +840,157 @@ final class ScreenshotWatcher {
   }
 
   private func startShortcutMonitor() {
-    let eventTypes: [CGEventType] = [.keyDown, .leftMouseDown, .leftMouseUp]
-    let mask = eventTypes.reduce(CGEventMask(0)) { partial, type in
+    let keyMask = CGEventMask(1 << CGEventType.keyDown.rawValue)
+    let keyTap = EventTapHost(eventMask: keyMask) { [weak self] type, event in
+      guard let self else { return Unmanaged.passUnretained(event) }
+      guard type == .keyDown else { return Unmanaged.passUnretained(event) }
+      if event.getIntegerValueField(.eventSourceUserData) == self.nativeCaptureMarker {
+        return Unmanaged.passUnretained(event)
+      }
+      if self.shouldReplaceScreenshotShortcut(event) {
+        self.beginNativeClipboardAndPreviewCapture(event)
+        return nil
+      }
+      self.handleScreenshotShortcutEvent(type: type, event: event)
+      return Unmanaged.passUnretained(event)
+    }
+    guard keyTap.start() else { return }
+    shortcutTap = keyTap
+
+    let mouseTypes: [CGEventType] = [.leftMouseDown, .leftMouseUp]
+    let mouseMask = mouseTypes.reduce(CGEventMask(0)) { partial, type in
       partial | CGEventMask(1 << type.rawValue)
     }
-    let tap = EventTapHost(eventMask: mask) { [weak self] type, event in
+    let mouseTap = EventTapHost(eventMask: mouseMask, options: .listenOnly) {
+      [weak self] type, event in
       self?.handleScreenshotShortcutEvent(type: type, event: event)
       return Unmanaged.passUnretained(event)
     }
-    guard tap.start() else { return }
-    shortcutTap = tap
+    guard mouseTap.start() else {
+      keyTap.stop()
+      shortcutTap = nil
+      return
+    }
+    shortcutMouseTap = mouseTap
+  }
+
+  private func shouldReplaceScreenshotShortcut(_ event: CGEvent) -> Bool {
+    let keyCode = Int(event.getIntegerValueField(.keyboardEventKeycode))
+    let flags = event.flags
+    return flags.contains(.maskCommand)
+      && flags.contains(.maskShift)
+      && !flags.contains(.maskControl)
+      && (keyCode == 20 || keyCode == 21)
+  }
+
+  private func beginNativeClipboardAndPreviewCapture(_ event: CGEvent) {
+    let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+    let flags = event.flags
+    nativeCaptureSequence &+= 1
+    let sequence = nativeCaptureSequence
+    let pasteboardChangeCount = NSPasteboard.general.changeCount
+
+    if keyCode == 21 {
+      interactiveCaptureMode = .selection
+      interactivePasteboardChangeCount = pasteboardChangeCount
+      selectionStart = nil
+      selectedWindowID = nil
+    } else {
+      resetInteractiveCapture()
+    }
+
+    screenshotControlQueue.async { [weak self] in
+      guard let self, self.isCurrentNativeCapture(sequence) else { return }
+
+      let keyReleaseDeadline = Date().addingTimeInterval(1.5)
+      while Date() < keyReleaseDeadline,
+        self.screenshotShortcutKeysArePressed(triggerKeyCode: keyCode),
+        self.isCurrentNativeCapture(sequence)
+      {
+        usleep(5_000)
+      }
+      guard
+        self.isCurrentNativeCapture(sequence),
+        !self.screenshotShortcutKeysArePressed(triggerKeyCode: keyCode)
+      else { return }
+
+      usleep(120_000)
+      guard self.isCurrentNativeCapture(sequence) else { return }
+      self.postKey(
+        keyCode: keyCode,
+        flags: flags.union(.maskControl),
+        userData: self.nativeCaptureMarker
+      )
+
+      guard keyCode == 20 else { return }
+      let pngData = self.waitForNativeClipboardImage(
+        from: pasteboardChangeCount,
+        sequence: sequence
+      )
+      guard self.isCurrentNativeCapture(sequence) else { return }
+      guard let pngData else {
+        NSLog("LazyestFlow screenshot: native clipboard did not expose image data")
+        return
+      }
+      self.saveAndPreviewNativeCapture(pngData, sequence: sequence)
+    }
+  }
+
+  private func screenshotShortcutKeysArePressed(triggerKeyCode: CGKeyCode) -> Bool {
+    let keyCodes: [CGKeyCode] = [triggerKeyCode, 54, 55, 56, 60]
+    return keyCodes.contains {
+      CGEventSource.keyState(.combinedSessionState, key: $0)
+    }
+  }
+
+  private func isCurrentNativeCapture(_ sequence: UInt64) -> Bool {
+    DispatchQueue.main.sync {
+      isRunning && nativeCaptureSequence == sequence
+    }
+  }
+
+  private func waitForNativeClipboardImage(
+    from initialChangeCount: Int,
+    sequence: UInt64
+  ) -> Data? {
+    let deadline = Date().addingTimeInterval(1.5)
+    while Date() < deadline, isCurrentNativeCapture(sequence) {
+      let pngData: Data? = DispatchQueue.main.sync {
+        let pasteboard = NSPasteboard.general
+        guard pasteboard.changeCount != initialChangeCount else { return nil }
+        if let pngData = pasteboard.data(forType: .png) {
+          return pngData
+        }
+        guard
+          let tiffData = pasteboard.data(forType: .tiff),
+          let representation = NSBitmapImageRep(data: tiffData)
+        else {
+          return nil
+        }
+        return representation.representation(using: .png, properties: [:])
+      }
+      if let pngData { return pngData }
+      usleep(5_000)
+    }
+    return nil
+  }
+
+  private func postKey(
+    keyCode: CGKeyCode,
+    flags: CGEventFlags,
+    userData: Int64 = 0
+  ) {
+    let source = CGEventSource(stateID: .combinedSessionState)
+    guard
+      let keyDown = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true),
+      let keyUp = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
+    else { return }
+    keyDown.flags = flags
+    keyUp.flags = flags
+    keyDown.setIntegerValueField(.eventSourceUserData, value: userData)
+    keyUp.setIntegerValueField(.eventSourceUserData, value: userData)
+    keyDown.post(tap: .cghidEventTap)
+    keyUp.post(tap: .cghidEventTap)
   }
 
   private func handleScreenshotShortcutEvent(type: CGEventType, event: CGEvent) {
@@ -785,23 +1013,6 @@ final class ScreenshotWatcher {
 
   private func handleScreenshotKeyDown(_ event: CGEvent) {
     let keyCode = Int(event.getIntegerValueField(.keyboardEventKeycode))
-    let flags = event.flags
-    let isScreenshotShortcut = flags.contains(.maskCommand) && flags.contains(.maskShift)
-
-    if isScreenshotShortcut, !flags.contains(.maskControl), keyCode == 20 {
-      NSLog("LazyestFlow screenshot: fullscreen shortcut")
-      resetInteractiveCapture()
-      captureToClipboard(arguments: [])
-      return
-    }
-    if isScreenshotShortcut, !flags.contains(.maskControl), keyCode == 21 {
-      NSLog("LazyestFlow screenshot: selection shortcut")
-      interactiveCaptureMode = .selection
-      selectionStart = nil
-      selectedWindowID = nil
-      return
-    }
-
     guard interactiveCaptureMode != nil else { return }
     switch keyCode {
     case 49:
@@ -819,9 +1030,10 @@ final class ScreenshotWatcher {
     guard let mode = interactiveCaptureMode else { return }
     let start = selectionStart
     let windowID = selectedWindowID
+    let pasteboardChangeCount = interactivePasteboardChangeCount
+    let sequence = nativeCaptureSequence
     resetInteractiveCapture()
 
-    let arguments: [String]
     switch mode {
     case .selection:
       guard let start else { return }
@@ -832,42 +1044,82 @@ final class ScreenshotWatcher {
         height: abs(end.y - start.y)
       ).integral
       guard rect.width >= 2, rect.height >= 2 else { return }
-      arguments = ["-R", rectangleArgument(rect)]
       NSLog("LazyestFlow screenshot: selection complete %@", rectangleArgument(rect))
+      finishInteractiveNativeCapture(
+        pasteboardChangeCount: pasteboardChangeCount,
+        sequence: sequence
+      )
     case .window:
       guard let windowID else { return }
-      arguments = ["-l", String(windowID)]
-    }
-
-    // Let the system selection overlay disappear while its normal save/thumbnail path continues.
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in
-      self?.captureToClipboard(arguments: arguments)
+      NSLog("LazyestFlow screenshot: window complete %u", windowID)
+      finishInteractiveNativeCapture(
+        pasteboardChangeCount: pasteboardChangeCount,
+        sequence: sequence
+      )
     }
   }
 
-  private func captureToClipboard(arguments: [String]) {
-    guard isRunning, config.screenshotClipboardWatch else { return }
-    let pasteboardChangeCount = NSPasteboard.general.changeCount
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-    process.arguments = ["-c", "-x"] + arguments
-    process.standardOutput = Pipe()
-    process.standardError = Pipe()
-    process.terminationHandler = { [weak self] process in
-      NSLog("LazyestFlow screenshot: helper exit %d", process.terminationStatus)
-      guard process.terminationStatus == 0 else { return }
-      DispatchQueue.main.async {
-        guard let self, self.isRunning,
-          NSPasteboard.general.changeCount != pasteboardChangeCount
-        else { return }
-        self.immediatelyCopiedCaptures.append(Date())
+  private func finishInteractiveNativeCapture(
+    pasteboardChangeCount: Int?,
+    sequence: UInt64
+  ) {
+    guard let pasteboardChangeCount else { return }
+    screenshotControlQueue.async { [weak self] in
+      guard let self, self.isCurrentNativeCapture(sequence) else { return }
+      let pngData = self.waitForNativeClipboardImage(
+        from: pasteboardChangeCount,
+        sequence: sequence
+      )
+      guard self.isCurrentNativeCapture(sequence) else { return }
+      guard let pngData else {
+        NSLog("LazyestFlow screenshot: interactive clipboard did not expose image data")
+        return
+      }
+      self.saveAndPreviewNativeCapture(pngData, sequence: sequence)
+    }
+  }
+
+  private func saveAndPreviewNativeCapture(_ pngData: Data, sequence: UInt64) {
+    guard let fileURL = nextScreenshotFileURL() else { return }
+    do {
+      try pngData.write(to: fileURL, options: .atomic)
+    } catch {
+      return
+    }
+    let capturedAt = Date()
+    DispatchQueue.main.async { [weak self] in
+      guard let self, self.isRunning, self.nativeCaptureSequence == sequence else { return }
+      self.immediatelyCopiedCaptures.append(capturedAt)
+      self.screenshotPreviewController.show(pngData: pngData, fileURL: fileURL)
+      self.scan()
+    }
+  }
+
+  private func nextScreenshotFileURL() -> URL? {
+    let directory = URL(fileURLWithPath: config.screenshotDir, isDirectory: true)
+    let defaults = UserDefaults(suiteName: "com.apple.screencapture")
+    let configuredName = defaults?.string(forKey: "name")?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let fallbackName =
+      Locale.current.language.languageCode?.identifier == "ko"
+      ? "스크린샷"
+      : "Screen Shot"
+    let prefix = configuredName?.isEmpty == false ? configuredName! : fallbackName
+
+    let formatter = DateFormatter()
+    formatter.locale = Locale.current
+    formatter.dateFormat = "yyyy-MM-dd a h.mm.ss"
+    let stem = "\(prefix) \(formatter.string(from: Date()))"
+
+    let fileManager = FileManager.default
+    for suffix in 0..<100 {
+      let name = suffix == 0 ? "\(stem).png" : "\(stem)(\(suffix + 1)).png"
+      let candidate = directory.appendingPathComponent(name)
+      if !fileManager.fileExists(atPath: candidate.path) {
+        return candidate
       }
     }
-    do {
-      try process.run()
-    } catch {
-      // The directory watcher remains as a delayed fallback.
-    }
+    return nil
   }
 
   private func rectangleArgument(_ rect: CGRect) -> String {
@@ -876,6 +1128,7 @@ final class ScreenshotWatcher {
 
   private func resetInteractiveCapture() {
     interactiveCaptureMode = nil
+    interactivePasteboardChangeCount = nil
     selectionStart = nil
     selectedWindowID = nil
   }

@@ -22,11 +22,11 @@
 - 사용자가 등록한 앱을 단축키로 숨기기, 다시 표시하기, 실행하기
 - 등록된 실행 앱 전체를 한 단축키로 숨기기. 앱 단축키 사용이 켜져 있을 때만 동작하며 기본 단축키는 없음
 - 선택하면 Mac 로그인 시 설정 창 없이 메뉴 막대에서 자동 실행
-- macOS가 실제 화면 캡처로 표시한 이미지에 한해 파일로 남기면서 클립보드에도 복사
+- macOS 네이티브 캡처로 클립보드와 파일에 같은 PNG를 저장하고, 드래그·열기·공유 가능한 최신 프리뷰를 표시
 - 화면 잠금과 디스플레이 꺼짐을 허용하면서 시스템 잠자기 방지. 전원 연결 시만 또는 배터리 포함 선택 가능
 - 덮개를 닫아도 작업을 유지하고, 선택하면 덮개를 닫는 즉시 로그인 화면으로 전환
 - 메뉴 막대에서 앱 단축키, 스크린샷 복사, 슬립모드 방지, Dock 고정을 즉시 켜고 끄기
-- Dock을 선택한 모니터로 옮긴 뒤 해당 모니터에 고정. 하단, 왼쪽, 오른쪽 Dock 지원
+- Dock을 선택한 모니터로 옮긴 뒤 Mission Control, 응용 프로그램 윈도우, 데스크탑 핫코너를 유지하면서 해당 모니터에 고정. 하단, 왼쪽, 오른쪽 Dock 지원
 - Dock 탭에서 자동 숨김 Dock의 반응 시간을 빠르게 적용하거나 macOS 기본값으로 초기화
 - 실제 입력으로 식별된 마우스별로 `기본값 따름 / 세로 반전 / macOS 기본 방향`을 선택하고 내장·Magic Trackpad 스크롤은 유지
 - 외장 키보드별 Option/Command 배열 변환. Flow는 장치별 조작키만 바꾸며, F18 한/영 전환은 Setup이 관리하는 Karabiner Complex 규칙을 그대로 사용
@@ -93,7 +93,7 @@ LAZYEST_NOTARY_PROFILE="lazyest-notary" \
 ./scripts/package-macos-release.sh
 ```
 
-완료되면 `dist/Lazyest-Flow-<version>-macOS.zip`과 SHA-256 파일이 생깁니다. 이 명령은 GitHub Release나 App Store 등록을 만들지 않습니다.
+완료되면 `dist/Lazyest-Flow-<version>-macOS.zip`, `.dmg`와 각각의 SHA-256 파일이 생깁니다. 이 명령은 GitHub Release나 App Store 등록을 만들지 않습니다.
 
 런타임 설정은 `~/Library/Application Support/Lazyest Flow/`에 저장됩니다. 로그인 자동 실행은 macOS `SMAppService`가 관리하며 업데이트 시 보존되고 앱 제거 시 해제됩니다. `승인 필요`가 표시되면 시스템 설정의 로그인 항목에서 Lazyest Flow를 허용하면 됩니다. 메뉴의 체크는 실제 실행 중인 기능을 뜻하며, 요청 상태와 실제 런타임 상태가 다르면 혼합 상태로 표시됩니다. 복합 USB 수신기는 실제 키 입력과 포인터 입력으로 키보드·마우스를 구분하고 역할을 기억합니다. 자동 식별되지 않는 수신기는 입력 장치 탭에서 한 번 직접 종류를 선택할 수 있습니다. 키보드 매핑은 Karabiner의 장치별 Simple Modifications와 전역 Complex Modification을 사용하며, 구조가 올바른 JSON을 보존해 쓴 뒤 실제 매핑 검증에 성공한 경우에만 `적용됨`으로 표시됩니다. 앱 단축키, 마우스 스크롤 반전, 덮개 즉시 잠금, Dock 고정에는 Accessibility 권한이 필요합니다.
 

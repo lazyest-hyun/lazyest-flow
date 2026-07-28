@@ -5,12 +5,18 @@ final class EventTapHost {
   typealias Handler = (CGEventType, CGEvent) -> Unmanaged<CGEvent>?
 
   private let eventMask: CGEventMask
+  private let options: CGEventTapOptions
   private let handler: Handler
   private var eventTap: CFMachPort?
   private var runLoopSource: CFRunLoopSource?
 
-  init(eventMask: CGEventMask, handler: @escaping Handler) {
+  init(
+    eventMask: CGEventMask,
+    options: CGEventTapOptions = .defaultTap,
+    handler: @escaping Handler
+  ) {
     self.eventMask = eventMask
+    self.options = options
     self.handler = handler
   }
 
@@ -33,7 +39,7 @@ final class EventTapHost {
     eventTap = CGEvent.tapCreate(
       tap: .cgSessionEventTap,
       place: .headInsertEventTap,
-      options: .defaultTap,
+      options: options,
       eventsOfInterest: eventMask,
       callback: callback,
       userInfo: Unmanaged.passUnretained(self).toOpaque()

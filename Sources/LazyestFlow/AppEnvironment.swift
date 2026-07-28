@@ -164,7 +164,7 @@ private let koreanAgentStrings: [String: String] = [
   "screenshots.choose": "변경",
   "screenshots.open": "폴더 열기",
   "screenshots.copy": "파일 저장 + 클립보드 복사",
-  "screenshots.copyDetail": "떠 있는 썸네일은 유지하고, 캡처 이후 즉시 클립보드에도 복사합니다.",
+  "screenshots.copyDetail": "같은 PNG를 즉시 복사·저장하고, 드래그와 공유가 가능한 최신 프리뷰를 표시합니다.",
   "state.on": "켜짐",
   "state.off": "꺼짐",
   "keep.title": "슬립모드 방지",
@@ -331,7 +331,8 @@ private let englishAgentStrings: [String: String] = [
   "screenshots.choose": "Change",
   "screenshots.open": "Open folder",
   "screenshots.copy": "Save file + copy to clipboard",
-  "screenshots.copyDetail": "Keeps the floating thumbnail and copies to the clipboard immediately after capture.",
+  "screenshots.copyDetail":
+    "Copies and saves the same PNG, then shows a latest-only preview with drag and share actions.",
   "state.on": "On",
   "state.off": "Off",
   "keep.title": "Prevent Sleep",

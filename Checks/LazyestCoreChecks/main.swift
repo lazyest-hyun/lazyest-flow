@@ -204,7 +204,82 @@ check(
 check(
   DockEdgeTriggerPolicy.pressurePoint(in: dockFrame, edge: .right) == CGPoint(x: 1940, y: 540),
   "Dock right pressure point is incorrect")
-
+check(
+  DockEdgeTriggerPolicy.allowsHotCorner(
+    at: CGPoint(x: 1919, y: 1079),
+    in: dockFrame,
+    edge: .bottom,
+    activeCorners: [.bottomRight],
+    originAtTop: true
+  ),
+  "Active Quartz bottom-right Hot Corner was blocked")
+check(
+  DockEdgeTriggerPolicy.allowsHotCorner(
+    at: CGPoint(x: 1919, y: 1),
+    in: dockFrame,
+    edge: .bottom,
+    activeCorners: [.bottomRight],
+    originAtTop: false
+  ),
+  "Active AppKit bottom-right Hot Corner was blocked")
+check(
+  !DockEdgeTriggerPolicy.allowsHotCorner(
+    at: CGPoint(x: 960, y: 1079),
+    in: dockFrame,
+    edge: .bottom,
+    activeCorners: [.bottomRight],
+    originAtTop: true
+  ),
+  "Dock pin allowed a non-corner bottom-edge trigger")
+check(
+  !DockEdgeTriggerPolicy.allowsHotCorner(
+    at: CGPoint(x: 1919, y: 1079),
+    in: dockFrame,
+    edge: .bottom,
+    activeCorners: [],
+    originAtTop: true
+  ),
+  "Dock pin allowed an inactive Hot Corner")
+check(
+  DockEdgeTriggerPolicy.matchingHotCorner(
+    at: CGPoint(x: 1, y: 1079),
+    in: dockFrame,
+    edge: .bottom,
+    activeCorners: [.bottomLeft, .bottomRight],
+    originAtTop: true
+  ) == .bottomLeft,
+  "Dock pin did not identify the active bottom-left Hot Corner")
+check(
+  DockEdgeTriggerPolicy.matchingHotCorner(
+    at: CGPoint(x: 1919, y: 1079),
+    in: dockFrame,
+    edge: .bottom,
+    activeCorners: [.bottomLeft, .bottomRight],
+    originAtTop: true
+  ) == .bottomRight,
+  "Dock pin did not identify the active bottom-right Hot Corner")
+check(
+  DockEdgeTriggerPolicy.matchingHotCorner(
+    at: CGPoint(x: 1918, y: 1079),
+    in: dockFrame,
+    edge: .bottom,
+    activeCorners: [.bottomRight],
+    originAtTop: true,
+    size: 1
+  ) == nil,
+  "Dock pin allowed more than the exact Hot Corner pixel")
+check(
+  DockEdgeTriggerPolicy.missionControlArgument(forHotCornerAction: 2) == "0",
+  "Mission Control Hot Corner action was not mapped")
+check(
+  DockEdgeTriggerPolicy.missionControlArgument(forHotCornerAction: 3) == "2",
+  "Application Windows Hot Corner action was not mapped")
+check(
+  DockEdgeTriggerPolicy.missionControlArgument(forHotCornerAction: 4) == "1",
+  "Desktop Hot Corner action was not mapped")
+check(
+  DockEdgeTriggerPolicy.missionControlArgument(forHotCornerAction: 14) == nil,
+  "Unsupported Hot Corner action was mapped")
 check(
   RuntimeFeatureStatePolicy.resolve(requested: false, active: false) == .off,
   "Inactive feature did not resolve to off")
