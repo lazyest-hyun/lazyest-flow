@@ -79,21 +79,23 @@ MAC_BOOTSTRAP_AGENT_CODESIGN_IDENTITY="Your Local Code Signing Identity" ./boots
 
 ## 배포 패키지 준비
 
-공개 배포용 ZIP은 Developer ID Application 인증서와 Apple 공증 프로필이 준비된 Mac에서만 만듭니다. 값 자체는 저장소에 기록하지 않고 셸 환경으로 전달합니다.
+공개 배포용 PKG는 Developer ID Application, Developer ID Installer 인증서와 Apple 공증 프로필이 준비된 Mac에서만 만듭니다. 값 자체는 저장소에 기록하지 않고 셸 환경으로 전달합니다.
 
 ```sh
 LAZYEST_CODESIGN_IDENTITY="Developer ID Application: ..." \
+LAZYEST_INSTALLER_IDENTITY="Developer ID Installer: ..." \
 LAZYEST_TEAM_ID="..." \
 LAZYEST_NOTARY_PROFILE="lazyest-notary" \
 ./scripts/package-macos-release.sh --preflight
 
 LAZYEST_CODESIGN_IDENTITY="Developer ID Application: ..." \
+LAZYEST_INSTALLER_IDENTITY="Developer ID Installer: ..." \
 LAZYEST_TEAM_ID="..." \
 LAZYEST_NOTARY_PROFILE="lazyest-notary" \
 ./scripts/package-macos-release.sh
 ```
 
-완료되면 `dist/Lazyest-Flow-<version>-macOS.zip`, `.dmg`와 각각의 SHA-256 파일이 생깁니다. 이 명령은 GitHub Release나 App Store 등록을 만들지 않습니다.
+완료되면 `dist/Lazyest-Flow-<version>-macOS.pkg`와 SHA-256 파일이 생깁니다. 이 명령은 GitHub Release나 App Store 등록을 만들지 않습니다.
 
 런타임 설정은 `~/Library/Application Support/Lazyest Flow/`에 저장됩니다. 로그인 자동 실행은 macOS `SMAppService`가 관리하며 업데이트 시 보존되고 앱 제거 시 해제됩니다. `승인 필요`가 표시되면 시스템 설정의 로그인 항목에서 Lazyest Flow를 허용하면 됩니다. 메뉴의 체크는 실제 실행 중인 기능을 뜻하며, 요청 상태와 실제 런타임 상태가 다르면 혼합 상태로 표시됩니다. 복합 USB 수신기는 실제 키 입력과 포인터 입력으로 키보드·마우스를 구분하고 역할을 기억합니다. 자동 식별되지 않는 수신기는 입력 장치 탭에서 한 번 직접 종류를 선택할 수 있습니다. 키보드 매핑은 Karabiner의 장치별 Simple Modifications와 전역 Complex Modification을 사용하며, 구조가 올바른 JSON을 보존해 쓴 뒤 실제 매핑 검증에 성공한 경우에만 `적용됨`으로 표시됩니다. 앱 단축키, 마우스 스크롤 반전, 덮개 즉시 잠금, Dock 고정에는 Accessibility 권한이 필요합니다.
 
