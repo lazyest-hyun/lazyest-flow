@@ -2,6 +2,17 @@ import AppKit
 import ApplicationServices
 import Foundation
 
+@discardableResult
+func openAccessibilitySystemSettings() -> Bool {
+  guard
+    let url = URL(
+      string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+  else {
+    return false
+  }
+  return NSWorkspace.shared.open(url)
+}
+
 func displayID(for screen: NSScreen) -> UInt32 {
   screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? UInt32 ?? 0
 }

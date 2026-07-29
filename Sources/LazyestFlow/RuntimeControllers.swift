@@ -1,10 +1,7 @@
 import AppKit
 import ApplicationServices
-import CoreServices
-import Darwin
 import Foundation
 import IOKit.pwr_mgt
-import ImageIO
 import LazyestCore
 
 final class DockPinController {
@@ -151,9 +148,6 @@ final class DockPinController {
   private func startMonitoring() {
     guard !isMonitoring else { return }
     guard AXIsProcessTrusted() else {
-      let options =
-        [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-      AXIsProcessTrustedWithOptions(options)
       NSLog("Dock pin needs Accessibility permission")
       postStatus(.needsPermission)
       startPermissionMonitoring()
@@ -668,67 +662,15 @@ final class DockPinController {
 }
 
 final class ScreenshotWatcher {
-  private enum InteractiveCaptureMode {
-    case selection
-    case window
-  }
-
-  private struct ImageFile {
-    let path: String
-    let modificationDate: Date
-  }
-
-  private struct PendingFile {
-    let nextRetryAt: Date
-    let attempts: Int
-  }
-
-  private struct ClipboardPayload {
-    let sourceType: NSPasteboard.PasteboardType
-    let sourceData: Data
-    let pngData: Data?
-  }
-
-  private enum CopyResult {
-    case copied
-    case retry
-    case rejected
-  }
-
-  private enum PreparationResult {
-    case ready(ClipboardPayload)
-    case retry
-    case rejected
-  }
-
   private let config: Config
-  private var timer: Timer?
   private var shortcutTap: EventTapHost?
-  private var shortcutMouseTap: EventTapHost?
-  private var directorySource: DispatchSourceFileSystemObject?
-  private var scheduledScan: DispatchWorkItem?
-  private var scheduledRetry: DispatchWorkItem?
-  private var seenPaths: Set<String> = []
-  private var pendingPaths: [String: PendingFile] = [:]
-  private var isScanning = false
   private var isRunning = false
-  private var monitoringGeneration: UInt64 = 0
-  private var monitoringStartedAt = Date.distantFuture
-  private var interactiveCaptureMode: InteractiveCaptureMode?
-  private var interactivePasteboardChangeCount: Int?
-  private var selectionStart: CGPoint?
-  private var selectedWindowID: CGWindowID?
-  private var immediatelyCopiedCaptures: [Date] = []
   private var nativeCaptureSequence: UInt64 = 0
-  private let screenshotPreviewController = ScreenshotPreviewController()
   private let screenshotControlQueue = DispatchQueue(
     label: "com.lazyest.flow.screenshot-control",
     qos: .userInteractive
   )
   private let nativeCaptureMarker: Int64 = 0x4C_46_4E_43
-  private let imageExtensions = Set(["png", "jpg", "jpeg", "tif", "tiff", "heic"])
-  private let maxRetryCount = 50
-  private let trackedFileLifetime: TimeInterval = 120
 
   init(config: Config) {
     self.config = config
@@ -740,46 +682,18 @@ final class ScreenshotWatcher {
 
   func start() {
     stop()
-    isRunning = true
-    monitoringStartedAt = Date()
-    seenPaths.removeAll(keepingCapacity: true)
-    pendingPaths.removeAll(keepingCapacity: true)
-    immediatelyCopiedCaptures.removeAll(keepingCapacity: true)
-    startShortcutMonitor()
-    startDirectoryMonitor()
-    scan()
-
-    let timer = Timer(timeInterval: 30.0, repeats: true) { [weak self] _ in
-      self?.scan()
+    guard AXIsProcessTrusted() else {
+      NSLog("Screenshot shortcut monitor needs Accessibility permission")
+      return
     }
-    timer.tolerance = 5.0
-    self.timer = timer
-    RunLoop.main.add(timer, forMode: .common)
+    isRunning = true
+    startShortcutMonitor()
   }
 
   func stop() {
-    monitoringGeneration &+= 1
     isRunning = false
-    isScanning = false
-    timer?.invalidate()
-    timer = nil
     shortcutTap?.stop()
     shortcutTap = nil
-    shortcutMouseTap?.stop()
-    shortcutMouseTap = nil
-    interactiveCaptureMode = nil
-    interactivePasteboardChangeCount = nil
-    selectionStart = nil
-    selectedWindowID = nil
-    scheduledScan?.cancel()
-    scheduledScan = nil
-    scheduledRetry?.cancel()
-    scheduledRetry = nil
-    directorySource?.cancel()
-    directorySource = nil
-    seenPaths.removeAll(keepingCapacity: true)
-    pendingPaths.removeAll()
-    immediatelyCopiedCaptures.removeAll()
     nativeCaptureSequence &+= 1
   }
 
@@ -792,53 +706,6 @@ final class ScreenshotWatcher {
     }
   }
 
-  private func scan() {
-    guard isRunning, config.screenshotClipboardWatch else { return }
-    guard !isScanning else { return }
-    isScanning = true
-    let generation = monitoringGeneration
-    let cutoff = max(
-      monitoringStartedAt,
-      Date().addingTimeInterval(-trackedFileLifetime)
-    )
-    DispatchQueue.global(qos: .utility).async { [weak self] in
-      guard let self else { return }
-      let files = self.currentImageFiles(modifiedAfter: cutoff)
-      DispatchQueue.main.async {
-        guard self.monitoringGeneration == generation else { return }
-        guard self.isRunning else {
-          self.isScanning = false
-          return
-        }
-        let currentPaths = Set(files.map(\.path))
-        self.seenPaths.formIntersection(currentPaths)
-        self.pendingPaths = self.pendingPaths.filter { currentPaths.contains($0.key) }
-
-        let unseenFiles = files.filter { !self.seenPaths.contains($0.path) }
-        guard let nextFile = unseenFiles.first else {
-          self.isScanning = false
-          return
-        }
-
-        let now = Date()
-        if self.consumeImmediateCopy(matching: nextFile.modificationDate, now: now) {
-          self.seenPaths.insert(nextFile.path)
-          self.pendingPaths.removeValue(forKey: nextFile.path)
-          self.isScanning = false
-          self.scheduleScan(after: 0.01)
-          return
-        }
-        if let pending = self.pendingPaths[nextFile.path], pending.nextRetryAt > now {
-          self.isScanning = false
-          self.scheduleScan(after: pending.nextRetryAt.timeIntervalSince(now))
-          return
-        }
-
-        self.prepareImageForClipboard(path: nextFile.path, generation: generation)
-      }
-    }
-  }
-
   private func startShortcutMonitor() {
     let keyMask = CGEventMask(1 << CGEventType.keyDown.rawValue)
     let keyTap = EventTapHost(eventMask: keyMask) { [weak self] type, event in
@@ -847,57 +714,33 @@ final class ScreenshotWatcher {
       if event.getIntegerValueField(.eventSourceUserData) == self.nativeCaptureMarker {
         return Unmanaged.passUnretained(event)
       }
-      if self.shouldReplaceScreenshotShortcut(event) {
-        self.beginNativeClipboardAndPreviewCapture(event)
+      if self.shouldSwapScreenshotShortcut(event) {
+        self.beginSwappedScreenshotCapture(event)
         return nil
       }
-      self.handleScreenshotShortcutEvent(type: type, event: event)
       return Unmanaged.passUnretained(event)
     }
     guard keyTap.start() else { return }
     shortcutTap = keyTap
-
-    let mouseTypes: [CGEventType] = [.leftMouseDown, .leftMouseUp]
-    let mouseMask = mouseTypes.reduce(CGEventMask(0)) { partial, type in
-      partial | CGEventMask(1 << type.rawValue)
-    }
-    let mouseTap = EventTapHost(eventMask: mouseMask, options: .listenOnly) {
-      [weak self] type, event in
-      self?.handleScreenshotShortcutEvent(type: type, event: event)
-      return Unmanaged.passUnretained(event)
-    }
-    guard mouseTap.start() else {
-      keyTap.stop()
-      shortcutTap = nil
-      return
-    }
-    shortcutMouseTap = mouseTap
   }
 
-  private func shouldReplaceScreenshotShortcut(_ event: CGEvent) -> Bool {
+  private func shouldSwapScreenshotShortcut(_ event: CGEvent) -> Bool {
     let keyCode = Int(event.getIntegerValueField(.keyboardEventKeycode))
     let flags = event.flags
     return flags.contains(.maskCommand)
       && flags.contains(.maskShift)
-      && !flags.contains(.maskControl)
       && (keyCode == 20 || keyCode == 21)
   }
 
-  private func beginNativeClipboardAndPreviewCapture(_ event: CGEvent) {
+  private func beginSwappedScreenshotCapture(_ event: CGEvent) {
     let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
     let flags = event.flags
+    let convertsToClipboard = !flags.contains(.maskControl)
+    let savesClipboardCapture = convertsToClipboard && config.screenshotClipboardSaveFile
     nativeCaptureSequence &+= 1
     let sequence = nativeCaptureSequence
-    let pasteboardChangeCount = NSPasteboard.general.changeCount
-
-    if keyCode == 21 {
-      interactiveCaptureMode = .selection
-      interactivePasteboardChangeCount = pasteboardChangeCount
-      selectionStart = nil
-      selectedWindowID = nil
-    } else {
-      resetInteractiveCapture()
-    }
+    let pasteboardChangeCount =
+      savesClipboardCapture ? NSPasteboard.general.changeCount : nil
 
     screenshotControlQueue.async { [weak self] in
       guard let self, self.isCurrentNativeCapture(sequence) else { return }
@@ -916,23 +759,30 @@ final class ScreenshotWatcher {
 
       usleep(120_000)
       guard self.isCurrentNativeCapture(sequence) else { return }
+      var forwardedFlags = flags
+      if convertsToClipboard {
+        forwardedFlags.insert(.maskControl)
+      } else {
+        forwardedFlags.remove(.maskControl)
+      }
       self.postKey(
         keyCode: keyCode,
-        flags: flags.union(.maskControl),
+        flags: forwardedFlags,
         userData: self.nativeCaptureMarker
       )
 
-      guard keyCode == 20 else { return }
+      guard savesClipboardCapture, let pasteboardChangeCount else { return }
       let pngData = self.waitForNativeClipboardImage(
         from: pasteboardChangeCount,
-        sequence: sequence
+        sequence: sequence,
+        timeout: keyCode == 21 ? 60 : 2
       )
       guard self.isCurrentNativeCapture(sequence) else { return }
       guard let pngData else {
         NSLog("LazyestFlow screenshot: native clipboard did not expose image data")
         return
       }
-      self.saveAndPreviewNativeCapture(pngData, sequence: sequence)
+      self.saveClipboardCapture(pngData, sequence: sequence)
     }
   }
 
@@ -951,9 +801,10 @@ final class ScreenshotWatcher {
 
   private func waitForNativeClipboardImage(
     from initialChangeCount: Int,
-    sequence: UInt64
+    sequence: UInt64,
+    timeout: TimeInterval
   ) -> Data? {
-    let deadline = Date().addingTimeInterval(1.5)
+    let deadline = Date().addingTimeInterval(timeout)
     while Date() < deadline, isCurrentNativeCapture(sequence) {
       let pngData: Data? = DispatchQueue.main.sync {
         let pasteboard = NSPasteboard.general
@@ -993,105 +844,16 @@ final class ScreenshotWatcher {
     keyUp.post(tap: .cghidEventTap)
   }
 
-  private func handleScreenshotShortcutEvent(type: CGEventType, event: CGEvent) {
-    switch type {
-    case .keyDown:
-      handleScreenshotKeyDown(event)
-    case .leftMouseDown:
-      guard let mode = interactiveCaptureMode else { return }
-      if mode == .window {
-        selectedWindowID = windowID(at: event.location)
-      } else {
-        selectionStart = event.location
-      }
-    case .leftMouseUp:
-      completeInteractiveCapture(at: event.location)
-    default:
-      break
-    }
-  }
-
-  private func handleScreenshotKeyDown(_ event: CGEvent) {
-    let keyCode = Int(event.getIntegerValueField(.keyboardEventKeycode))
-    guard interactiveCaptureMode != nil else { return }
-    switch keyCode {
-    case 49:
-      interactiveCaptureMode = interactiveCaptureMode == .selection ? .window : .selection
-      selectionStart = nil
-      selectedWindowID = nil
-    case 53:
-      resetInteractiveCapture()
-    default:
-      break
-    }
-  }
-
-  private func completeInteractiveCapture(at end: CGPoint) {
-    guard let mode = interactiveCaptureMode else { return }
-    let start = selectionStart
-    let windowID = selectedWindowID
-    let pasteboardChangeCount = interactivePasteboardChangeCount
-    let sequence = nativeCaptureSequence
-    resetInteractiveCapture()
-
-    switch mode {
-    case .selection:
-      guard let start else { return }
-      let rect = CGRect(
-        x: min(start.x, end.x),
-        y: min(start.y, end.y),
-        width: abs(end.x - start.x),
-        height: abs(end.y - start.y)
-      ).integral
-      guard rect.width >= 2, rect.height >= 2 else { return }
-      NSLog("LazyestFlow screenshot: selection complete %@", rectangleArgument(rect))
-      finishInteractiveNativeCapture(
-        pasteboardChangeCount: pasteboardChangeCount,
-        sequence: sequence
-      )
-    case .window:
-      guard let windowID else { return }
-      NSLog("LazyestFlow screenshot: window complete %u", windowID)
-      finishInteractiveNativeCapture(
-        pasteboardChangeCount: pasteboardChangeCount,
-        sequence: sequence
-      )
-    }
-  }
-
-  private func finishInteractiveNativeCapture(
-    pasteboardChangeCount: Int?,
-    sequence: UInt64
-  ) {
-    guard let pasteboardChangeCount else { return }
-    screenshotControlQueue.async { [weak self] in
-      guard let self, self.isCurrentNativeCapture(sequence) else { return }
-      let pngData = self.waitForNativeClipboardImage(
-        from: pasteboardChangeCount,
-        sequence: sequence
-      )
-      guard self.isCurrentNativeCapture(sequence) else { return }
-      guard let pngData else {
-        NSLog("LazyestFlow screenshot: interactive clipboard did not expose image data")
-        return
-      }
-      self.saveAndPreviewNativeCapture(pngData, sequence: sequence)
-    }
-  }
-
-  private func saveAndPreviewNativeCapture(_ pngData: Data, sequence: UInt64) {
+  private func saveClipboardCapture(_ pngData: Data, sequence: UInt64) {
+    guard config.screenshotClipboardSaveFile, isCurrentNativeCapture(sequence) else { return }
     guard let fileURL = nextScreenshotFileURL() else { return }
     do {
       try pngData.write(to: fileURL, options: .atomic)
     } catch {
-      return
-    }
-    let capturedAt = Date()
-    DispatchQueue.main.async { [weak self] in
-      guard let self, self.isRunning, self.nativeCaptureSequence == sequence else { return }
-      self.immediatelyCopiedCaptures.append(capturedAt)
-      self.screenshotPreviewController.show(pngData: pngData, fileURL: fileURL)
-      self.scan()
+      NSLog(
+        "LazyestFlow screenshot: failed to save clipboard capture %@",
+        error.localizedDescription
+      )
     }
   }
 
@@ -1122,290 +884,4 @@ final class ScreenshotWatcher {
     return nil
   }
 
-  private func rectangleArgument(_ rect: CGRect) -> String {
-    "\(Int(rect.origin.x)),\(Int(rect.origin.y)),\(Int(rect.width)),\(Int(rect.height))"
-  }
-
-  private func resetInteractiveCapture() {
-    interactiveCaptureMode = nil
-    interactivePasteboardChangeCount = nil
-    selectionStart = nil
-    selectedWindowID = nil
-  }
-
-  private func windowID(at point: CGPoint) -> CGWindowID? {
-    guard
-      let windows = CGWindowListCopyWindowInfo(
-        [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID
-      ) as? [[CFString: Any]]
-    else { return nil }
-
-    let ignoredOwners = Set([
-      "LazyestFlow", "Screenshot", "Window Server", "Dock", "Control Center",
-    ])
-    for window in windows {
-      guard let layer = window[kCGWindowLayer] as? NSNumber, layer.intValue == 0,
-        let owner = window[kCGWindowOwnerName] as? String, !ignoredOwners.contains(owner),
-        let bounds = window[kCGWindowBounds] as? NSDictionary,
-        let windowID = window[kCGWindowNumber] as? NSNumber
-      else { continue }
-      var rect = CGRect.zero
-      guard CGRectMakeWithDictionaryRepresentation(bounds as CFDictionary, &rect),
-        rect.contains(point)
-      else {
-        continue
-      }
-      return CGWindowID(windowID.uint32Value)
-    }
-    return nil
-  }
-
-  private func consumeImmediateCopy(matching modificationDate: Date, now: Date) -> Bool {
-    immediatelyCopiedCaptures.removeAll { now.timeIntervalSince($0) > 20 }
-    guard
-      let index = immediatelyCopiedCaptures.firstIndex(where: {
-        abs(modificationDate.timeIntervalSince($0)) <= 15
-      })
-    else { return false }
-    immediatelyCopiedCaptures.remove(at: index)
-    return true
-  }
-
-  private func prepareImageForClipboard(path: String, generation: UInt64) {
-    DispatchQueue.global(qos: .utility).async { [weak self] in
-      guard let self else { return }
-      let result = autoreleasepool {
-        self.prepareClipboardPayload(path: path)
-      }
-      DispatchQueue.main.async {
-        guard self.isRunning, self.monitoringGeneration == generation else { return }
-        let copyResult: CopyResult
-        switch result {
-        case .ready(let payload):
-          copyResult = self.publishToClipboard(payload) ? .copied : .retry
-        case .retry:
-          copyResult = .retry
-        case .rejected:
-          copyResult = .rejected
-        }
-        self.completeCopy(path: path, result: copyResult, generation: generation)
-      }
-    }
-  }
-
-  private func completeCopy(path: String, result: CopyResult, generation: UInt64) {
-    switch result {
-    case .copied, .rejected:
-      seenPaths.insert(path)
-      pendingPaths.removeValue(forKey: path)
-      isScanning = false
-      scheduleScan(after: 0.01)
-    case .retry:
-      let attempts = (pendingPaths[path]?.attempts ?? 0) + 1
-      if attempts >= maxRetryCount {
-        seenPaths.insert(path)
-        pendingPaths.removeValue(forKey: path)
-        isScanning = false
-        scheduleScan(after: 0.01)
-      } else {
-        let delay = min(0.02 * pow(1.25, Double(attempts - 1)), 0.2)
-        pendingPaths[path] = PendingFile(
-          nextRetryAt: Date().addingTimeInterval(delay),
-          attempts: attempts
-        )
-        scheduleRetry(path: path, generation: generation, after: delay)
-      }
-    }
-  }
-
-  private func scheduleRetry(path: String, generation: UInt64, after delay: TimeInterval) {
-    scheduledRetry?.cancel()
-    let workItem = DispatchWorkItem { [weak self] in
-      guard let self else { return }
-      self.scheduledRetry = nil
-      guard self.isRunning, self.monitoringGeneration == generation,
-        self.pendingPaths[path] != nil
-      else {
-        self.isScanning = false
-        return
-      }
-      self.prepareImageForClipboard(path: path, generation: generation)
-    }
-    scheduledRetry = workItem
-    DispatchQueue.main.asyncAfter(deadline: .now() + max(0.01, delay), execute: workItem)
-  }
-
-  private func startDirectoryMonitor() {
-    let descriptor = Darwin.open(config.screenshotDir, O_EVTONLY)
-    guard descriptor >= 0 else { return }
-    let source = DispatchSource.makeFileSystemObjectSource(
-      fileDescriptor: descriptor,
-      eventMask: [.write, .extend, .rename, .delete],
-      queue: DispatchQueue.global(qos: .utility)
-    )
-    source.setEventHandler { [weak self] in
-      DispatchQueue.main.async {
-        self?.scheduleScan(after: 0.01)
-      }
-    }
-    source.setCancelHandler {
-      Darwin.close(descriptor)
-    }
-    directorySource = source
-    source.resume()
-  }
-
-  private func scheduleScan(after delay: TimeInterval) {
-    guard isRunning else { return }
-    scheduledScan?.cancel()
-    let workItem = DispatchWorkItem { [weak self] in
-      self?.scheduledScan = nil
-      self?.scan()
-    }
-    scheduledScan = workItem
-    DispatchQueue.main.asyncAfter(deadline: .now() + max(0.01, delay), execute: workItem)
-  }
-
-  private func currentImageFiles(modifiedAfter cutoff: Date) -> [ImageFile] {
-    let dir = config.screenshotDir
-    guard
-      let urls = try? FileManager.default.contentsOfDirectory(
-        at: URL(fileURLWithPath: dir),
-        includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey],
-        options: [.skipsHiddenFiles]
-      )
-    else { return [] }
-    return
-      urls
-      .compactMap { url -> ImageFile? in
-        guard imageExtensions.contains(url.pathExtension.lowercased()),
-          let values = try? url.resourceValues(forKeys: [
-            .isRegularFileKey, .contentModificationDateKey,
-          ]),
-          values.isRegularFile == true,
-          let modificationDate = values.contentModificationDate,
-          modificationDate >= cutoff
-        else { return nil }
-        return ImageFile(path: url.path, modificationDate: modificationDate)
-      }
-      .sorted {
-        if $0.modificationDate == $1.modificationDate {
-          return $0.path < $1.path
-        }
-        return $0.modificationDate < $1.modificationDate
-      }
-  }
-
-  private func prepareClipboardPayload(path: String) -> PreparationResult {
-    let url = URL(fileURLWithPath: path)
-    let fileExtension = url.pathExtension.lowercased()
-    guard imageExtensions.contains(fileExtension) else { return .rejected }
-    let sourceType: NSPasteboard.PasteboardType
-    switch fileExtension {
-    case "png":
-      sourceType = .png
-    case "jpg", "jpeg":
-      sourceType = NSPasteboard.PasteboardType("public.jpeg")
-    case "tif", "tiff":
-      sourceType = .tiff
-    case "heic":
-      sourceType = NSPasteboard.PasteboardType("public.heic")
-    default:
-      return .rejected
-    }
-
-    guard let isScreenCapture = isScreenCapture(path: url.path) else { return .retry }
-    guard isScreenCapture else { return .rejected }
-
-    guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
-      values.isRegularFile == true,
-      let fileSize = values.fileSize
-    else { return .retry }
-    guard ScreenshotFilePolicy.acceptsEncodedByteCount(fileSize) else { return .rejected }
-    guard let data = try? Data(contentsOf: url, options: [.mappedIfSafe]) else { return .retry }
-    guard hasCompleteFileTrailer(data, fileExtension: fileExtension),
-      let source = CGImageSourceCreateWithData(data as CFData, nil)
-    else { return .retry }
-    let frameCount = CGImageSourceGetCount(source)
-    guard CGImageSourceGetStatus(source) == .statusComplete else { return .retry }
-    guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-      let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
-      let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue,
-      ScreenshotFilePolicy.acceptsImage(width: width, height: height, frameCount: frameCount)
-    else {
-      return .rejected
-    }
-
-    var pngData: Data?
-    if sourceType != .png,
-      ScreenshotFilePolicy.shouldCreatePNGCompatibilityImage(width: width, height: height)
-    {
-      guard let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
-        return .retry
-      }
-      let representation = NSBitmapImageRep(cgImage: cgImage)
-      pngData = representation.representation(using: .png, properties: [:])
-    }
-
-    return .ready(
-      ClipboardPayload(sourceType: sourceType, sourceData: data, pngData: pngData)
-    )
-  }
-
-  private func publishToClipboard(_ payload: ClipboardPayload) -> Bool {
-    let item = NSPasteboardItem()
-    item.setData(payload.sourceData, forType: payload.sourceType)
-    if let pngData = payload.pngData {
-      item.setData(pngData, forType: .png)
-    }
-
-    let pasteboard = NSPasteboard.general
-    pasteboard.clearContents()
-    return pasteboard.writeObjects([item])
-  }
-
-  private func isScreenCapture(path: String) -> Bool? {
-    let attributeName = "com.apple.metadata:kMDItemIsScreenCapture"
-    let attributeSize = path.withCString { pathPointer in
-      attributeName.withCString { namePointer in
-        getxattr(pathPointer, namePointer, nil, 0, 0, 0)
-      }
-    }
-    if attributeSize > 0 {
-      var data = Data(count: attributeSize)
-      let bytesRead = data.withUnsafeMutableBytes { buffer in
-        path.withCString { pathPointer in
-          attributeName.withCString { namePointer in
-            getxattr(pathPointer, namePointer, buffer.baseAddress, buffer.count, 0, 0)
-          }
-        }
-      }
-      if bytesRead == attributeSize,
-        let value = try? PropertyListSerialization.propertyList(from: data, format: nil)
-          as? NSNumber
-      {
-        return value.boolValue
-      }
-    }
-
-    guard let metadata = MDItemCreate(kCFAllocatorDefault, path as CFString),
-      let captureFlag = MDItemCopyAttribute(metadata, "kMDItemIsScreenCapture" as CFString)
-        as? NSNumber
-    else {
-      return nil
-    }
-    return captureFlag.boolValue
-  }
-
-  private func hasCompleteFileTrailer(_ data: Data, fileExtension: String) -> Bool {
-    switch fileExtension {
-    case "png":
-      let iend = Data([0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82])
-      return data.count >= iend.count && data.suffix(iend.count).elementsEqual(iend)
-    case "jpg", "jpeg":
-      return data.count >= 2 && data.suffix(2).elementsEqual([0xff, 0xd9])
-    default:
-      return true
-    }
-  }
 }

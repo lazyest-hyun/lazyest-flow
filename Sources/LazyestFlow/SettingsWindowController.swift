@@ -40,6 +40,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     title: flowText("dock.permission"), action: #selector(openAccessibilitySettings))
   private lazy var screenshotFolderButton = pathButton(action: #selector(openScreenshotDirectory))
   private lazy var screenshotWatchSwitch = settingSwitch(action: #selector(toggleScreenshotWatch))
+  private lazy var screenshotSaveFileSwitch = settingSwitch(
+    action: #selector(toggleScreenshotSaveFile))
+  private lazy var screenshotPermissionButton = actionButton(
+    title: flowText("dock.permission"), action: #selector(openAccessibilitySettings))
+  private let screenshotStatusLabel = NSTextField(labelWithString: "")
   private lazy var keepAwakeSwitch = settingSwitch(action: #selector(toggleKeepAwake))
   private lazy var keepAwakeApprovalButton: NSButton = {
     let button = actionButton(
@@ -1002,11 +1007,32 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     root.addArrangedSubview(
       settingRow(title: flowText("screenshots.folder"), control: pathControls))
     root.addArrangedSubview(separator())
+    screenshotStatusLabel.alignment = .center
+    screenshotStatusLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+    screenshotStatusLabel.wantsLayer = true
+    screenshotStatusLabel.layer?.cornerRadius = 7
+    screenshotStatusLabel.layer?.masksToBounds = true
+    screenshotStatusLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 76).isActive =
+      true
+    let screenshotControls = NSStackView()
+    screenshotControls.orientation = .horizontal
+    screenshotControls.alignment = .centerY
+    screenshotControls.spacing = 8
+    screenshotControls.addArrangedSubview(screenshotStatusLabel)
+    screenshotControls.addArrangedSubview(screenshotPermissionButton)
+    screenshotControls.addArrangedSubview(screenshotWatchSwitch)
     root.addArrangedSubview(
       settingRow(
         title: flowText("screenshots.copy"),
         detail: flowText("screenshots.copyDetail"),
-        control: screenshotWatchSwitch
+        control: screenshotControls
+      ))
+    root.addArrangedSubview(separator())
+    root.addArrangedSubview(
+      settingRow(
+        title: flowText("screenshots.saveFile"),
+        detail: flowText("screenshots.saveFileDetail"),
+        control: screenshotSaveFileSwitch
       ))
     root.addArrangedSubview(NSView())
     item.view = root
@@ -1021,12 +1047,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     appHotkeysSwitch.state = config.appHotkeysEnabled ? .on : .off
     mouseScrollReverseSwitch.state = config.mouseScrollReverseEnabled ? .on : .off
     screenshotWatchSwitch.state = config.screenshotClipboardWatch ? .on : .off
+    screenshotSaveFileSwitch.state = config.screenshotClipboardSaveFile ? .on : .off
     keepAwakeSwitch.state = config.keepAwakeEnabled ? .on : .off
     keepAwakePowerScopeControl.selectedSegment = config.keepAwakeOnBattery ? 1 : 0
     lockOnLidCloseSwitch.state = config.lockOnLidClose ? .on : .off
     dockPinSwitch.state = config.dockPinEnabled ? .on : .off
     populateDockDisplayPopup(selectedID: config.dockPinDisplayID)
     refreshMouseScrollUI()
+    refreshScreenshotUI()
     refreshMouseDevices()
     refreshKeyboardDevices()
     refreshDockPinUI()
@@ -1563,7 +1591,37 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     screenshotFolderButton.toolTip = screenshotDirectoryPath
   }
 
+  private func refreshScreenshotUI() {
+    let status: String
+    if screenshotWatchSwitch.state != .on {
+      status = flowText("screenshots.status.off")
+    } else if !AXIsProcessTrusted() {
+      status = flowText("screenshots.status.needsPermission")
+    } else {
+      status = flowText("screenshots.status.active")
+    }
+    screenshotStatusLabel.stringValue = status
+    let isActive = status == flowText("screenshots.status.active")
+    let isOff = status == flowText("screenshots.status.off")
+    let tint: NSColor = isActive ? .systemGreen : (isOff ? .secondaryLabelColor : .systemOrange)
+    screenshotStatusLabel.textColor = tint
+    screenshotStatusLabel.layer?.backgroundColor =
+      tint.withAlphaComponent(isOff ? 0.08 : 0.13).cgColor
+    screenshotPermissionButton.isHidden =
+      status != flowText("screenshots.status.needsPermission")
+    screenshotSaveFileSwitch.isEnabled = screenshotWatchSwitch.state == .on
+  }
+
   @objc private func toggleScreenshotWatch() {
+    let needsAccessibility = screenshotWatchSwitch.state == .on && !AXIsProcessTrusted()
+    refreshScreenshotUI()
+    saveRuntimeSettings()
+    if needsAccessibility {
+      openAccessibilitySettings()
+    }
+  }
+
+  @objc private func toggleScreenshotSaveFile() {
     saveRuntimeSettings()
   }
 
@@ -1637,6 +1695,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
   @objc private func toggleAppHotkeys() {
     let enabled = appHotkeysSwitch.state == .on
+    let needsAccessibility = enabled && !AXIsProcessTrusted()
     for row in rows {
       row.enabledSwitch.state = enabled ? .on : .off
       row.binding.isEnabled = enabled
@@ -1644,6 +1703,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
     updateAppHotkeyControls()
     savePressed()
+    if needsAccessibility {
+      openAccessibilitySettings()
+    }
   }
 
   private func updateAppHotkeyControls() {
@@ -1677,25 +1739,28 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
   @objc private func toggleLockOnLidClose() {
     let needsAccessibility = lockOnLidCloseSwitch.state == .on && !AXIsProcessTrusted()
-    if needsAccessibility {
-      let options =
-        [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-      AXIsProcessTrustedWithOptions(options)
-    }
     saveRuntimeSettings()
-    if needsAccessibility && !AXIsProcessTrusted() {
-      statusLabel.stringValue = flowText("dock.status.needsPermission")
+    if needsAccessibility {
+      openAccessibilitySettings()
     }
   }
 
   @objc private func toggleMouseScrollReverse() {
+    let needsAccessibility = mouseScrollReverseSwitch.state == .on && !AXIsProcessTrusted()
     refreshMouseScrollUI()
     saveRuntimeSettings()
+    if needsAccessibility {
+      openAccessibilitySettings()
+    }
   }
 
   @objc private func toggleDockPin() {
+    let needsAccessibility = dockPinSwitch.state == .on && !AXIsProcessTrusted()
     saveRuntimeSettings()
     refreshDockPinUI(status: dockPinStatusProvider())
+    if needsAccessibility {
+      openAccessibilitySettings()
+    }
   }
 
   @objc private func toggleDockTiming() {
@@ -1713,14 +1778,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   }
 
   @objc private func openAccessibilitySettings() {
-    let options =
-      [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-    AXIsProcessTrustedWithOptions(options)
-    if let url = URL(
-      string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
-    {
-      NSWorkspace.shared.open(url)
-    }
+    openAccessibilitySystemSettings()
+    refreshScreenshotUI()
     refreshMouseScrollUI(
       status: AXIsProcessTrusted() ? nil : flowText("devices.mouse.status.needsPermission"))
     refreshDockPinUI(
@@ -1749,6 +1808,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         mouseScrollReverseEnabled: mouseScrollReverseSwitch.state == .on,
         screenshotDir: screenshotDirectoryPath,
         screenshotClipboardWatch: screenshotWatchSwitch.state == .on,
+        screenshotClipboardSaveFile: screenshotSaveFileSwitch.state == .on,
         keepAwakeEnabled: keepAwakeSwitch.state == .on,
         keepAwakeOnBattery: keepAwakePowerScopeControl.selectedSegment == 1,
         lockOnLidClose: lockOnLidCloseSwitch.state == .on,
@@ -1769,6 +1829,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         mouseScrollReverseEnabled: mouseScrollReverseSwitch.state == .on,
         screenshotDir: screenshotDirectoryPath,
         screenshotClipboardWatch: screenshotWatchSwitch.state == .on,
+        screenshotClipboardSaveFile: screenshotSaveFileSwitch.state == .on,
         keepAwakeEnabled: keepAwakeSwitch.state == .on,
         keepAwakeOnBattery: keepAwakePowerScopeControl.selectedSegment == 1,
         lockOnLidClose: lockOnLidCloseSwitch.state == .on,

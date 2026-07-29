@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import Carbon
 import Foundation
 import LazyestCore
@@ -204,11 +205,16 @@ final class Flow: NSObject, NSApplicationDelegate {
   private func toggleMenuFeature(_ feature: MenuFeature) {
     do {
       config.reloadBootstrap()
+      var needsAccessibility = false
       switch feature {
       case .appHotkeys:
-        try config.setAppHotkeysEnabled(!config.appHotkeysEnabled)
+        let enabling = !config.appHotkeysEnabled
+        try config.setAppHotkeysEnabled(enabling)
+        needsAccessibility = enabling && !AXIsProcessTrusted()
       case .screenshotClipboard:
-        try config.setScreenshotClipboardWatch(!config.screenshotClipboardWatch)
+        let enabling = !config.screenshotClipboardWatch
+        try config.setScreenshotClipboardWatch(enabling)
+        needsAccessibility = enabling && !AXIsProcessTrusted()
       case .keepAwake:
         let enabling = !config.keepAwakeEnabled
         try config.setKeepAwakeEnabled(enabling)
@@ -219,10 +225,15 @@ final class Flow: NSObject, NSApplicationDelegate {
         settingsWindowController?.reloadPressed()
         return
       case .dockPin:
-        try config.setDockPinEnabled(!config.dockPinEnabled)
+        let enabling = !config.dockPinEnabled
+        try config.setDockPinEnabled(enabling)
+        needsAccessibility = enabling && !AXIsProcessTrusted()
       }
       reloadAll()
       settingsWindowController?.reloadPressed()
+      if needsAccessibility {
+        openAccessibilitySystemSettings()
+      }
     } catch {
       NSLog("Failed to toggle menu feature: \(error)")
     }
@@ -449,7 +460,8 @@ final class Flow: NSObject, NSApplicationDelegate {
   }
 
   private func activateAfterHiding(_ application: NSRunningApplication?) {
-    let nextApplication = application
+    let nextApplication =
+      application
       ?? NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first
     nextApplication?.activate(options: [.activateAllWindows])
   }
