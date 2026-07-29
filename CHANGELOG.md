@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0 - 2026-07-29
+
+- Swapped the standard screenshot shortcuts with their Control variants so Command-Shift-3/4 copies through the native macOS clipboard capture, while Control-Command-Shift-3/4 keeps the native file-save and floating-preview behavior.
+- Added an optional exact-PNG file save for clipboard captures without introducing a separate Flow preview.
+- Removed screenshot-folder monitoring, fallback scans, mouse tracking, and the custom floating preview.
+- Opened Accessibility settings only after the user enables a feature that needs it, and kept screenshot runtime status aligned with the granted permission.
+
 ## 1.1.0 - 2026-07-28
 
 - Kept Mission Control, Application Windows, and Desktop Hot Corners usable on secondary displays by invoking the matching macOS system action without passing a Dock edge event.
