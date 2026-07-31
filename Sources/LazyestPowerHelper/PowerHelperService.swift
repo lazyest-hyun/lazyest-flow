@@ -35,14 +35,15 @@ enum PowerHelperConnectionValidator {
         == LazyestPowerHelper.installedExecutablePath,
       expectedApplicationPath == LazyestPowerHelper.installedAppPath,
       expectedUserID != nil,
-      let expectedCDHash,
-      expectedCDHash.count == 40,
-      expectedCDHash.allSatisfy({ $0.isHexDigit }),
       let applicationCode = staticCode(at: LazyestPowerHelper.installedAppPath),
       SecStaticCodeCheckValidity(applicationCode, [], nil) == errSecSuccess,
       signingIdentifier(for: applicationCode)
         == LazyestPowerHelper.agentBundleIdentifier,
-      codeHash(for: applicationCode) == expectedCDHash
+      let applicationTeamIdentifier = teamIdentifier(for: applicationCode),
+      let helperCode = staticCode(at: LazyestPowerHelper.installedExecutablePath),
+      SecStaticCodeCheckValidity(helperCode, [], nil) == errSecSuccess,
+      signingIdentifier(for: helperCode) == LazyestPowerHelper.label,
+      teamIdentifier(for: helperCode) == applicationTeamIdentifier
     else {
       return false
     }
@@ -63,10 +64,6 @@ enum PowerHelperConnectionValidator {
         == LazyestPowerHelper.installedFlowExecutablePath
     else {
       powerHelperLogger.error("Client rejected: unexpected executable path")
-      return false
-    }
-    guard let expectedCDHash else {
-      powerHelperLogger.error("Client rejected: missing expected code hash")
       return false
     }
     guard let guestCode = guestCode(processIdentifier: connection.processIdentifier) else {
@@ -90,8 +87,12 @@ enum PowerHelperConnectionValidator {
       powerHelperLogger.error("Client rejected: bundle identifier mismatch")
       return false
     }
-    guard codeHash(for: guestStaticCode) == expectedCDHash else {
-      powerHelperLogger.error("Client rejected: code hash mismatch")
+    guard
+      let applicationCode = staticCode(at: LazyestPowerHelper.installedAppPath),
+      let applicationTeamIdentifier = teamIdentifier(for: applicationCode),
+      teamIdentifier(for: guestStaticCode) == applicationTeamIdentifier
+    else {
+      powerHelperLogger.error("Client rejected: signing team mismatch")
       return false
     }
     return true
@@ -99,11 +100,6 @@ enum PowerHelperConnectionValidator {
 
   private static var expectedApplicationPath: String? {
     ProcessInfo.processInfo.environment[LazyestPowerHelper.clientAppPathEnvironment]
-  }
-
-  private static var expectedCDHash: String? {
-    ProcessInfo.processInfo.environment[LazyestPowerHelper.clientCDHashEnvironment]?
-      .lowercased()
   }
 
   private static var expectedUserID: uid_t? {
@@ -160,11 +156,8 @@ enum PowerHelperConnectionValidator {
     signingInformation(for: code)?[kSecCodeInfoIdentifier] as? String
   }
 
-  private static func codeHash(for code: SecStaticCode) -> String? {
-    guard let hash = signingInformation(for: code)?[kSecCodeInfoUnique] as? Data else {
-      return nil
-    }
-    return hash.map { String(format: "%02x", $0) }.joined()
+  private static func teamIdentifier(for code: SecStaticCode) -> String? {
+    signingInformation(for: code)?[kSecCodeInfoTeamIdentifier] as? String
   }
 
   private static func guestCode(processIdentifier: pid_t) -> SecCode? {

@@ -366,14 +366,33 @@ check(
   LidStatePolicy.isClosed(clamshellMessageArgument: 3),
   "A closed clamshell message with the sleep-policy bit was decoded as open")
 check(
-  LidSleepPolicy.shouldRequestSleep(enabled: true, isKoreanInputSource: true),
+  LidSleepPolicy.resolve(
+    keepAwakeEnabled: true,
+    inputModePolicyEnabled: true,
+    isKoreanInputSource: true
+  ) == .requestSleep,
   "Korean input mode did not request sleep on lid close")
 check(
-  !LidSleepPolicy.shouldRequestSleep(enabled: true, isKoreanInputSource: false),
-  "A input mode incorrectly requested sleep on lid close")
+  LidSleepPolicy.resolve(
+    keepAwakeEnabled: true,
+    inputModePolicyEnabled: true,
+    isKoreanInputSource: false
+  ) == .preventSleep,
+  "A input mode did not prevent sleep on lid close")
 check(
-  !LidSleepPolicy.shouldRequestSleep(enabled: false, isKoreanInputSource: true),
-  "Disabled lid sleep policy still requested sleep")
+  LidSleepPolicy.resolve(
+    keepAwakeEnabled: true,
+    inputModePolicyEnabled: false,
+    isKoreanInputSource: true
+  ) == .preventSleep,
+  "Disabled input mode policy did not preserve keep-awake on lid close")
+check(
+  LidSleepPolicy.resolve(
+    keepAwakeEnabled: false,
+    inputModePolicyEnabled: true,
+    isKoreanInputSource: true
+  ) == .followSystem,
+  "Disabled keep-awake did not follow the system lid policy")
 
 check(!ShortcutPolicy.hasGlobalActivationModifier([]), "Modifierless shortcut was accepted")
 check(!ShortcutPolicy.hasGlobalActivationModifier(["shift"]), "Shift-only shortcut was accepted")

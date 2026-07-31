@@ -46,6 +46,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     title: flowText("dock.permission"), action: #selector(openAccessibilitySettings))
   private let screenshotStatusLabel = NSTextField(labelWithString: "")
   private lazy var keepAwakeSwitch = settingSwitch(action: #selector(toggleKeepAwake))
+  private lazy var keepAwakeApprovalButton: NSButton = {
+    let button = actionButton(
+      title: flowText("keep.approve"), action: #selector(requestKeepAwakeAuthorization))
+    button.widthAnchor.constraint(equalToConstant: 104).isActive = true
+    return button
+  }()
   private lazy var keepAwakePowerScopeControl: NSSegmentedControl = {
     let control = NSSegmentedControl(
       labels: [flowText("keep.powerOnly"), flowText("keep.includeBattery")],
@@ -86,6 +92,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   var onShortcutCaptureStart: (() -> Void)?
   var onShortcutCaptureEnd: (() -> Void)?
   var onLanguageChange: (() -> Void)?
+  var onKeepAwakeAuthorizationRequest: ((Bool) -> Void)?
   var onClose: (() -> Void)?
 
   init(
@@ -549,6 +556,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     let runtimeStatus = status ?? keepAwakeStatusProvider()
     let resolvedStatus: KeepAwakeStatus = enabled ? runtimeStatus : .off(runtimeStatus.power)
+    switch resolvedStatus {
+    case .helperApprovalRequired, .helperUnavailable:
+      keepAwakeApprovalButton.isHidden = false
+    default:
+      keepAwakeApprovalButton.isHidden = true
+    }
     let powerText = keepAwakePowerText(resolvedStatus.power)
     let statusText: String
     let tint: NSColor
@@ -807,8 +820,24 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     root.addArrangedSubview(header)
     header.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
     root.addArrangedSubview(separator())
+    let approvalSlot = NSView()
+    approvalSlot.widthAnchor.constraint(equalToConstant: 104).isActive = true
+    approvalSlot.heightAnchor.constraint(equalToConstant: 32).isActive = true
+    keepAwakeApprovalButton.translatesAutoresizingMaskIntoConstraints = false
+    approvalSlot.addSubview(keepAwakeApprovalButton)
+    NSLayoutConstraint.activate([
+      keepAwakeApprovalButton.leadingAnchor.constraint(equalTo: approvalSlot.leadingAnchor),
+      keepAwakeApprovalButton.trailingAnchor.constraint(equalTo: approvalSlot.trailingAnchor),
+      keepAwakeApprovalButton.centerYAnchor.constraint(equalTo: approvalSlot.centerYAnchor),
+    ])
+    let masterControls = NSStackView()
+    masterControls.orientation = .horizontal
+    masterControls.alignment = .centerY
+    masterControls.spacing = 8
+    masterControls.addArrangedSubview(approvalSlot)
+    masterControls.addArrangedSubview(keepAwakeSwitch)
     root.addArrangedSubview(
-      settingRow(title: flowText("keep.prevent"), control: keepAwakeSwitch))
+      settingRow(title: flowText("keep.prevent"), control: masterControls))
     root.addArrangedSubview(separator())
     root.addArrangedSubview(
       settingRow(
@@ -1705,6 +1734,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   @objc private func toggleKeepAwake() {
     refreshKeepAwakeUI()
     saveRuntimeSettings()
+  }
+
+  @objc private func requestKeepAwakeAuthorization() {
+    onKeepAwakeAuthorizationRequest?(true)
   }
 
   @objc private func changeKeepAwakePowerScope() {

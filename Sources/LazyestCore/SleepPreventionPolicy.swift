@@ -28,10 +28,21 @@ public enum SleepPreventionPolicy {
 }
 
 public enum LidSleepPolicy {
-  public static func shouldRequestSleep(
-    enabled: Bool,
+  public enum Action: Equatable {
+    case followSystem
+    case preventSleep
+    case requestSleep
+  }
+
+  public static func resolve(
+    keepAwakeEnabled: Bool,
+    inputModePolicyEnabled: Bool,
     isKoreanInputSource: Bool
-  ) -> Bool {
-    enabled && isKoreanInputSource
+  ) -> Action {
+    guard keepAwakeEnabled else { return .followSystem }
+    if inputModePolicyEnabled, isKoreanInputSource {
+      return .requestSleep
+    }
+    return .preventSleep
   }
 }

@@ -249,6 +249,9 @@ final class Flow: NSObject, NSApplicationDelegate {
         }
       )
       controller.onSave = { [weak self] in self?.reloadAll() }
+      controller.onKeepAwakeAuthorizationRequest = { [weak self] forceReinstall in
+        self?.keepAwakeController.requestAuthorization(forceReinstall: forceReinstall)
+      }
       controller.onShortcutCaptureStart = { [weak self] in self?.pauseHotkeysForCapture() }
       controller.onShortcutCaptureEnd = { [weak self] in self?.reloadHotkeys() }
       controller.onLanguageChange = { [weak self] in
