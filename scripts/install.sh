@@ -37,6 +37,19 @@ if [ "$installed_app_path" = "$LEGACY_APP_PATH" ]; then
   installed_executable_name="$LEGACY_APP_NAME"
 fi
 installed_executable="$installed_app_path/Contents/MacOS/$installed_executable_name"
+if [ -z "${MAC_BOOTSTRAP_AGENT_CODESIGN_IDENTITY:-}" ] && [ -d "$installed_app_path" ]; then
+  installed_codesign_identity="$(
+    codesign -dv --verbose=4 "$installed_app_path" 2>&1 \
+      | sed -n 's/^Authority=//p' \
+      | head -1
+  )"
+  if [[ "$installed_codesign_identity" == Developer\ ID\ Application:* ]] \
+    && security find-identity -v -p codesigning 2>/dev/null \
+      | grep -F "\"$installed_codesign_identity\"" >/dev/null; then
+    export MAC_BOOTSTRAP_AGENT_CODESIGN_IDENTITY="$installed_codesign_identity"
+    echo "  preserve codesign: $installed_codesign_identity"
+  fi
+fi
 installed_login_maintenance_version="$(
   /usr/libexec/PlistBuddy -c 'Print :MacBootstrapLoginLaunchMaintenanceVersion' \
     "$installed_app_path/Contents/Info.plist" 2>/dev/null || true
