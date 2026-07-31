@@ -43,6 +43,7 @@ final class Config {
   private(set) var keepAwakeEnabled: Bool
   private(set) var keepAwakeOnBattery: Bool
   private(set) var lockOnLidClose: Bool
+  private(set) var sleepOnKoreanLidClose: Bool
   private(set) var dockPinEnabled: Bool
   private(set) var dockPinDisplayID: UInt32?
 
@@ -57,6 +58,7 @@ final class Config {
     self.keepAwakeEnabled = false
     self.keepAwakeOnBattery = true
     self.lockOnLidClose = false
+    self.sleepOnKoreanLidClose = false
     self.dockPinEnabled = false
     self.dockPinDisplayID = currentDisplayID()
     ensureConfigFiles()
@@ -130,6 +132,7 @@ final class Config {
     keepAwakeEnabled: Bool,
     keepAwakeOnBattery: Bool,
     lockOnLidClose: Bool,
+    sleepOnKoreanLidClose: Bool,
     dockPinEnabled: Bool,
     dockPinDisplayID: UInt32?
   ) throws {
@@ -141,6 +144,7 @@ final class Config {
     self.keepAwakeEnabled = keepAwakeEnabled
     self.keepAwakeOnBattery = keepAwakeOnBattery
     self.lockOnLidClose = lockOnLidClose
+    self.sleepOnKoreanLidClose = sleepOnKoreanLidClose
     self.dockPinEnabled = dockPinEnabled
     self.dockPinDisplayID = dockPinDisplayID
     let encodedScreenshotDir = try encodeConfigString(screenshotDir)
@@ -153,6 +157,7 @@ final class Config {
       KEEP_AWAKE_ENABLED=\(keepAwakeEnabled ? "1" : "0")
       KEEP_AWAKE_ON_BATTERY=\(keepAwakeOnBattery ? "1" : "0")
       LOCK_ON_LID_CLOSE=\(lockOnLidClose ? "1" : "0")
+      SLEEP_ON_KOREAN_LID_CLOSE=\(sleepOnKoreanLidClose ? "1" : "0")
       DOCK_ANCHOR_ENABLED=\(dockPinEnabled ? "1" : "0")
       DOCK_ANCHOR_DISPLAY_ID=\(dockPinDisplayID.map(String.init) ?? "auto")
       """
@@ -189,6 +194,7 @@ final class Config {
     keepAwakeEnabled: Bool? = nil,
     keepAwakeOnBattery: Bool? = nil,
     lockOnLidClose: Bool? = nil,
+    sleepOnKoreanLidClose: Bool? = nil,
     dockPinEnabled: Bool? = nil
   ) throws {
     try saveBootstrap(
@@ -200,6 +206,7 @@ final class Config {
       keepAwakeEnabled: keepAwakeEnabled ?? self.keepAwakeEnabled,
       keepAwakeOnBattery: keepAwakeOnBattery ?? self.keepAwakeOnBattery,
       lockOnLidClose: lockOnLidClose ?? self.lockOnLidClose,
+      sleepOnKoreanLidClose: sleepOnKoreanLidClose ?? self.sleepOnKoreanLidClose,
       dockPinEnabled: dockPinEnabled ?? self.dockPinEnabled,
       dockPinDisplayID: dockPinDisplayID
     )
@@ -214,6 +221,7 @@ final class Config {
     keepAwakeEnabled = false
     keepAwakeOnBattery = true
     lockOnLidClose = false
+    sleepOnKoreanLidClose = false
     dockPinEnabled = false
     dockPinDisplayID = currentDisplayID()
     loadBootstrap()
@@ -255,6 +263,8 @@ final class Config {
         keepAwakeOnBattery = value == "1" || value.lowercased() == "true"
       } else if line.hasPrefix("LOCK_ON_LID_CLOSE="), let value = shellValue(line) {
         lockOnLidClose = value == "1" || value.lowercased() == "true"
+      } else if line.hasPrefix("SLEEP_ON_KOREAN_LID_CLOSE="), let value = shellValue(line) {
+        sleepOnKoreanLidClose = value == "1" || value.lowercased() == "true"
       } else if line.hasPrefix("DOCK_ANCHOR_ENABLED="), let value = shellValue(line) {
         dockPinEnabled = value == "1" || value.lowercased() == "true"
       } else if line.hasPrefix("DOCK_ANCHOR_DISPLAY_ID="), let value = shellValue(line) {

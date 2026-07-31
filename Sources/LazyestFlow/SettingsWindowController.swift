@@ -46,12 +46,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     title: flowText("dock.permission"), action: #selector(openAccessibilitySettings))
   private let screenshotStatusLabel = NSTextField(labelWithString: "")
   private lazy var keepAwakeSwitch = settingSwitch(action: #selector(toggleKeepAwake))
-  private lazy var keepAwakeApprovalButton: NSButton = {
-    let button = actionButton(
-      title: flowText("keep.approve"), action: #selector(requestKeepAwakeAuthorization))
-    button.widthAnchor.constraint(equalToConstant: 104).isActive = true
-    return button
-  }()
   private lazy var keepAwakePowerScopeControl: NSSegmentedControl = {
     let control = NSSegmentedControl(
       labels: [flowText("keep.powerOnly"), flowText("keep.includeBattery")],
@@ -65,6 +59,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     return control
   }()
   private lazy var lockOnLidCloseSwitch = settingSwitch(action: #selector(toggleLockOnLidClose))
+  private lazy var sleepOnKoreanLidCloseSwitch = settingSwitch(
+    action: #selector(toggleSleepOnKoreanLidClose))
   private let keepAwakeStatusLabel = NSTextField(labelWithString: "")
   private lazy var dockPinSwitch = settingSwitch(action: #selector(toggleDockPin))
   private lazy var dockTimingSwitch = settingSwitch(action: #selector(toggleDockTiming))
@@ -90,7 +86,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   var onShortcutCaptureStart: (() -> Void)?
   var onShortcutCaptureEnd: (() -> Void)?
   var onLanguageChange: (() -> Void)?
-  var onKeepAwakeAuthorizationRequest: ((Bool) -> Void)?
   var onClose: (() -> Void)?
 
   init(
@@ -550,16 +545,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     let enabled = keepAwakeSwitch.state == .on
     keepAwakePowerScopeControl.isEnabled = enabled
     lockOnLidCloseSwitch.isEnabled = enabled
+    sleepOnKoreanLidCloseSwitch.isEnabled = enabled
 
     let runtimeStatus = status ?? keepAwakeStatusProvider()
     let resolvedStatus: KeepAwakeStatus = enabled ? runtimeStatus : .off(runtimeStatus.power)
-    if case .helperApprovalRequired = resolvedStatus {
-      keepAwakeApprovalButton.isHidden = false
-    } else if case .helperUnavailable = resolvedStatus {
-      keepAwakeApprovalButton.isHidden = false
-    } else {
-      keepAwakeApprovalButton.isHidden = true
-    }
     let powerText = keepAwakePowerText(resolvedStatus.power)
     let statusText: String
     let tint: NSColor
@@ -818,24 +807,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     root.addArrangedSubview(header)
     header.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
     root.addArrangedSubview(separator())
-    let approvalSlot = NSView()
-    approvalSlot.widthAnchor.constraint(equalToConstant: 104).isActive = true
-    approvalSlot.heightAnchor.constraint(equalToConstant: 32).isActive = true
-    keepAwakeApprovalButton.translatesAutoresizingMaskIntoConstraints = false
-    approvalSlot.addSubview(keepAwakeApprovalButton)
-    NSLayoutConstraint.activate([
-      keepAwakeApprovalButton.leadingAnchor.constraint(equalTo: approvalSlot.leadingAnchor),
-      keepAwakeApprovalButton.trailingAnchor.constraint(equalTo: approvalSlot.trailingAnchor),
-      keepAwakeApprovalButton.centerYAnchor.constraint(equalTo: approvalSlot.centerYAnchor),
-    ])
-    let masterControls = NSStackView()
-    masterControls.orientation = .horizontal
-    masterControls.alignment = .centerY
-    masterControls.spacing = 8
-    masterControls.addArrangedSubview(approvalSlot)
-    masterControls.addArrangedSubview(keepAwakeSwitch)
     root.addArrangedSubview(
-      settingRow(title: flowText("keep.prevent"), control: masterControls))
+      settingRow(title: flowText("keep.prevent"), control: keepAwakeSwitch))
     root.addArrangedSubview(separator())
     root.addArrangedSubview(
       settingRow(
@@ -849,6 +822,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         title: flowText("keep.lockOnLid"),
         detail: flowText("keep.lockOnLidDetail"),
         control: lockOnLidCloseSwitch
+      ))
+    root.addArrangedSubview(separator())
+    root.addArrangedSubview(
+      settingRow(
+        title: flowText("keep.sleepOnKoreanLid"),
+        detail: flowText("keep.sleepOnKoreanLidDetail"),
+        control: sleepOnKoreanLidCloseSwitch
       ))
     root.addArrangedSubview(separator())
     keepAwakeStatusLabel.font = NSFont.systemFont(ofSize: 12, weight: .medium)
@@ -1051,6 +1031,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     keepAwakeSwitch.state = config.keepAwakeEnabled ? .on : .off
     keepAwakePowerScopeControl.selectedSegment = config.keepAwakeOnBattery ? 1 : 0
     lockOnLidCloseSwitch.state = config.lockOnLidClose ? .on : .off
+    sleepOnKoreanLidCloseSwitch.state = config.sleepOnKoreanLidClose ? .on : .off
     dockPinSwitch.state = config.dockPinEnabled ? .on : .off
     populateDockDisplayPopup(selectedID: config.dockPinDisplayID)
     refreshMouseScrollUI()
@@ -1724,13 +1705,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   @objc private func toggleKeepAwake() {
     refreshKeepAwakeUI()
     saveRuntimeSettings()
-    if keepAwakeSwitch.state == .on {
-      onKeepAwakeAuthorizationRequest?(false)
-    }
-  }
-
-  @objc private func requestKeepAwakeAuthorization() {
-    onKeepAwakeAuthorizationRequest?(true)
   }
 
   @objc private func changeKeepAwakePowerScope() {
@@ -1743,6 +1717,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     if needsAccessibility {
       openAccessibilitySettings()
     }
+  }
+
+  @objc private func toggleSleepOnKoreanLidClose() {
+    saveRuntimeSettings()
   }
 
   @objc private func toggleMouseScrollReverse() {
@@ -1812,6 +1790,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         keepAwakeEnabled: keepAwakeSwitch.state == .on,
         keepAwakeOnBattery: keepAwakePowerScopeControl.selectedSegment == 1,
         lockOnLidClose: lockOnLidCloseSwitch.state == .on,
+        sleepOnKoreanLidClose: sleepOnKoreanLidCloseSwitch.state == .on,
         dockPinEnabled: dockPinSwitch.state == .on,
         dockPinDisplayID: selectedDockDisplayID()
       )
@@ -1833,6 +1812,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         keepAwakeEnabled: keepAwakeSwitch.state == .on,
         keepAwakeOnBattery: keepAwakePowerScopeControl.selectedSegment == 1,
         lockOnLidClose: lockOnLidCloseSwitch.state == .on,
+        sleepOnKoreanLidClose: sleepOnKoreanLidCloseSwitch.state == .on,
         dockPinEnabled: dockPinSwitch.state == .on,
         dockPinDisplayID: selectedDockDisplayID()
       )

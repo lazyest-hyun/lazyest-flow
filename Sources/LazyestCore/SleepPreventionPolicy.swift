@@ -26,3 +26,12 @@ public enum SleepPreventionPolicy {
     return .active
   }
 }
+
+public enum LidSleepPolicy {
+  public static func shouldRequestSleep(
+    enabled: Bool,
+    isKoreanInputSource: Bool
+  ) -> Bool {
+    enabled && isKoreanInputSource
+  }
+}

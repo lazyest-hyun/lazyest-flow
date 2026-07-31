@@ -21,7 +21,7 @@ if ((DRY_RUN)); then
   echo "[dry-run] build release executable"
   echo "[dry-run] stop the existing $APP_EXECUTABLE or $LEGACY_APP_NAME process"
   package_app "$APP_PATH"
-  echo "[dry-run] refresh an already installed privileged helper with one administrator prompt"
+  echo "[dry-run] disable any legacy privileged sleep override"
   echo "[dry-run] preserve existing settings and login-start registration; seed missing config files"
   echo "INSTALL_FLOW_DRY_RUN_OK"
   exit 0
@@ -88,12 +88,6 @@ fi
 if ((login_start_was_enabled)); then
   if ! "$APP_PATH/Contents/MacOS/$APP_EXECUTABLE" --refresh-login-launch; then
     echo "  blocked: could not migrate or refresh the native login item" >&2
-    exit 1
-  fi
-fi
-if ((refresh_power_helper)); then
-  if ! "$APP_PATH/Contents/MacOS/$APP_EXECUTABLE" --register-power-helper; then
-    echo "  blocked: could not refresh the privileged sleep helper" >&2
     exit 1
   fi
 fi
