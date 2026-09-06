@@ -8,7 +8,7 @@
 
 ## 설치와 배포 상태
 
-2026년 9월 7일 기준 **1.2.2 Apple Silicon DMG**의 Developer ID 서명, Apple 공증, 스테이플, Gatekeeper 검사와 설치 확인을 완료했습니다. 설치본에서 한국어·영어, 밝은·어두운 화면, 두 창 너비의 UI 48개를 렌더링했고 단축키 편집 취소를 검사했습니다. 공개 GitHub Release에는 게시하지 않았으며, 공개 페이지에 남아 있는 PKG는 이전 버전입니다.
+2026년 9월 7일 기준 **1.2.3 Apple Silicon DMG**의 Developer ID 서명, Apple 공증, 스테이플, Gatekeeper 검사와 설치 확인을 완료했습니다. 동일한 UI 소스에서 한국어·영어, 밝은·어두운 화면, 실제 860/997pt 너비의 UI 48개를 렌더링했고 단축키 편집 취소를 검사했습니다. 공개 GitHub Release에는 게시하지 않았으며, 공개 페이지에 남아 있는 PKG는 이전 버전입니다.
 
 공개되면 DMG와 SHA-256 체크섬을 확인하고 앱을 `/Applications`로 옮겨 실행합니다. 지금 소스에서 설치하려면 다음 안내를 따릅니다.
 
@@ -43,7 +43,7 @@ Swift가 없다면 `xcode-select --install`로 Apple 개발 도구를 설치한 
 | 화면 | 스크린샷, Dock |
 | 시스템 | 잠자기, 일반 |
 
-마지막으로 열었던 페이지와 창의 위치·크기를 기억합니다. 관련 옵션은 같은 카드에 모으고 자세한 설명은 정보 아이콘의 툴팁에서 확인할 수 있습니다.
+마지막으로 열었던 페이지와 창의 위치·크기를 기억합니다. 페이지를 바꿔도 제목과 첫 설정 카드의 위치는 유지됩니다. 관련 옵션은 같은 카드에 모으고 자세한 설명은 정보 아이콘의 툴팁에서 확인할 수 있습니다.
 
 ## 스크린샷
 
@@ -113,6 +113,8 @@ Swift가 없다면 `xcode-select --install`로 Apple 개발 도구를 설치한 
 
 `--render-previews`는 실제 AppKit 설정 UI를 예시 데이터로 그립니다. 앱을 띄우거나 입력, 전원, 클립보드 설정을 변경하지 않습니다. 문서의 이미지는 이 모드로 생성한 예시이며 개인 장치명이나 사용자 경로가 없습니다. 실제 덮개 닫기, 잠금, 화면 캡처와 외장 장치 동작은 사용하는 Mac에서 별도로 확인해야 합니다.
 
+렌더링은 페이지 간 제목, 설명, 본문, 카드와 사이드바 위치를 비교하고 `page-layout.json`에 실제 좌표를 기록합니다. 범위와 결과는 [UI 정렬 검토](docs/ui-layout-review.md)를 참고하세요.
+
 로컬 빌드는 기본적으로 ad-hoc 서명합니다. 별도 인증서를 쓰려면 `LAZYEST_CODESIGN_IDENTITY`를 지정하세요. 명시한 인증서를 사용할 수 없으면 기존 앱을 보존하고 설치를 중단합니다.
 
 ```sh
@@ -147,4 +149,4 @@ LAZYEST_NOTARY_PROFILE="lazyest-notary" \
 scripts/package-dmg.sh "$PWD/dist/Lazyest Flow.app" "$PWD/dist/Lazyest-Flow-macOS.dmg"
 ```
 
-DMG를 열고 앱을 Applications로 옮긴 뒤 `/Applications`의 앱을 실행합니다. 현재 검증한 1.2.2 DMG는 Apple Silicon용입니다. 다른 CPU용 배포를 추가하려면 해당 빌드와 실행을 별도로 검증해야 합니다. 소스 변경 후에는 앱을 다시 빌드하고 서명해야 합니다.
+DMG를 열고 앱을 Applications로 옮긴 뒤 `/Applications`의 앱을 실행합니다. 현재 검증한 1.2.3 DMG는 Apple Silicon용입니다. 다른 CPU용 배포를 추가하려면 해당 빌드와 실행을 별도로 검증해야 합니다. 소스 변경 후에는 앱을 다시 빌드하고 서명해야 합니다.

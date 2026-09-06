@@ -392,23 +392,39 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     return button
   }
 
-  private func pageHeader(title: String, detail: String) -> NSStackView {
-    let stack = NSStackView()
-    stack.orientation = .vertical
-    stack.alignment = .leading
-    stack.spacing = 4
+  private func pageHeader(title: String, detail: String) -> NSView {
+    // A missing description must not move peer pages' content upward.
+    let header = NSView()
+    header.identifier = NSUserInterfaceItemIdentifier("settings-page-header")
+    header.heightAnchor.constraint(equalToConstant: 50).isActive = true
     let titleLabel = NSTextField(labelWithString: title)
+    titleLabel.identifier = NSUserInterfaceItemIdentifier("settings-page-title")
     titleLabel.font = NSFont.systemFont(ofSize: 22, weight: .semibold)
     titleLabel.alignment = .left
-    stack.addArrangedSubview(titleLabel)
-    if !detail.isEmpty {
-      let detailLabel = NSTextField(wrappingLabelWithString: detail)
-      detailLabel.textColor = .secondaryLabelColor
-      detailLabel.font = NSFont.systemFont(ofSize: 12)
-      detailLabel.alignment = .left
-      stack.addArrangedSubview(detailLabel)
+    titleLabel.lineBreakMode = .byTruncatingTail
+    let detailLabel = NSTextField(labelWithString: detail)
+    detailLabel.identifier = NSUserInterfaceItemIdentifier("settings-page-detail")
+    detailLabel.textColor = .secondaryLabelColor
+    detailLabel.font = NSFont.systemFont(ofSize: 12)
+    detailLabel.alignment = .left
+    detailLabel.lineBreakMode = .byTruncatingTail
+    detailLabel.toolTip = detail.isEmpty ? nil : detail
+    detailLabel.setAccessibilityElement(!detail.isEmpty)
+    for label in [titleLabel, detailLabel] {
+      label.translatesAutoresizingMaskIntoConstraints = false
+      header.addSubview(label)
     }
-    return stack
+    NSLayoutConstraint.activate([
+      titleLabel.leadingAnchor.constraint(equalTo: header.leadingAnchor),
+      titleLabel.trailingAnchor.constraint(equalTo: header.trailingAnchor),
+      titleLabel.topAnchor.constraint(equalTo: header.topAnchor),
+      titleLabel.heightAnchor.constraint(equalToConstant: 28),
+      detailLabel.leadingAnchor.constraint(equalTo: header.leadingAnchor),
+      detailLabel.trailingAnchor.constraint(equalTo: header.trailingAnchor),
+      detailLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 4),
+      detailLabel.heightAnchor.constraint(equalToConstant: 18),
+    ])
+    return header
   }
 
   private func settingRow(title: String, detail: String = "", control: NSView) -> NSStackView {
@@ -486,16 +502,19 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     return page
   }
 
-  private func settingsGroup(title: String? = nil, rows: [NSView]) -> NSStackView {
+  private func settingsGroup(title: String? = nil, reserveTitle: Bool = false, rows: [NSView]) -> NSStackView {
     let group = NSStackView()
     group.orientation = .vertical
     group.alignment = .leading
     group.spacing = 8
-    if let title {
-      let label = NSTextField(labelWithString: title)
+    // The first card starts on one baseline, with or without a section heading.
+    if title != nil || reserveTitle {
+      let label = NSTextField(labelWithString: title ?? "")
       label.font = .systemFont(ofSize: 12, weight: .semibold)
       label.textColor = .secondaryLabelColor
       label.alignment = .left
+      label.heightAnchor.constraint(equalToConstant: 16).isActive = true
+      label.setAccessibilityElement(title != nil)
       group.addArrangedSubview(label)
     }
     let card = AdaptiveCardStackView()
@@ -807,7 +826,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     let item = NSTabViewItem(identifier: "apps")
     item.label = flowText("tab.apps")
     let root = settingsPage(title: flowText("tab.apps"), detail: flowText("apps.hint"))
-    root.addArrangedSubview(settingsGroup(rows: [
+    root.addArrangedSubview(settingsGroup(reserveTitle: true, rows: [
       settingRow(title: flowText("apps.enabled"), control: appHotkeysSwitch),
       settingRow(title: flowText("apps.hideAll"), detail: flowText("apps.hideAllDetail"), control: appHotkeyControls()),
     ]))
@@ -857,7 +876,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     languagePopup.target = self
     languagePopup.action = #selector(changeLanguage)
     languagePopup.widthAnchor.constraint(equalToConstant: 150).isActive = true
-    root.addArrangedSubview(settingsGroup(rows: [
+    root.addArrangedSubview(settingsGroup(reserveTitle: true, rows: [
       settingRow(title: flowText("general.loginLaunch"), detail: flowText("general.loginLaunchDetail"),
         control: controls([loginLaunchStatusLabel, loginLaunchSwitch])),
       settingRow(title: flowText("language.label"), control: languagePopup),
@@ -876,7 +895,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     let item = NSTabViewItem(identifier: "keep-awake")
     item.label = flowText("tab.keepAwake")
     let root = settingsPage(title: flowText("keep.title"), detail: flowText("keep.detail"))
-    root.addArrangedSubview(settingsGroup(rows: [
+    root.addArrangedSubview(settingsGroup(reserveTitle: true, rows: [
       settingRow(title: flowText("keep.prevent"), control: controls([keepAwakeApprovalButton, keepAwakeSwitch])),
       statusView(keepAwakeStatusLabel),
     ]))
@@ -943,7 +962,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     let item = NSTabViewItem(identifier: "screenshots")
     item.label = flowText("tab.screenshots")
     let root = settingsPage(title: flowText("screenshots.title"), detail: flowText("screenshots.detail"))
-    root.addArrangedSubview(settingsGroup(rows: [
+    root.addArrangedSubview(settingsGroup(reserveTitle: true, rows: [
       settingRow(title: flowText("screenshots.copy"), detail: flowText("screenshots.copyDetail"),
         control: controls([screenshotPermissionButton, screenshotWatchSwitch])),
       statusView(screenshotStatusLabel),
@@ -1008,15 +1027,36 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     try validatePreviewNavigation()
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let names = ["general", "shortcuts", "input-devices", "screenshots", "keep-awake", "dock"]
+    var layouts: [[String: Any]] = []
     for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
       window.appearance = NSAppearance(named: appearanceName)
       let style = appearanceName == .aqua ? "light" : "dark"
-      for width in [860, 1060] {
+      for width in [860, 997] {
         window.setContentSize(NSSize(width: width, height: 580))
+        var reference: [String: Double]?
         for (index, name) in names.enumerated() {
           selectPage(index)
           contentView.layoutSubtreeIfNeeded()
           contentView.displayIfNeeded()
+          let nativeWidth = window.contentRect(forFrameRect: window.frame).width
+          guard abs(contentView.bounds.width - CGFloat(width)) <= 0.5,
+            abs(nativeWidth - CGFloat(width)) <= 0.5 else {
+            throw NSError(domain: "FlowPreview", code: 6, userInfo: [NSLocalizedDescriptionKey: "Requested preview width was not applied"])
+          }
+          let layout = try previewPageLayout(in: contentView)
+          if let reference {
+            for (key, expected) in reference where abs((layout[key] ?? -1) - expected) > 0.5 {
+              throw NSError(domain: "FlowPreview", code: 3, userInfo: [
+                NSLocalizedDescriptionKey: "\(name) \(style) \(width): \(key) moved from \(expected) to \(layout[key] ?? -1)"
+              ])
+            }
+          } else {
+            reference = layout
+          }
+          layouts.append([
+            "page": name, "appearance": style, "requestedWidth": width,
+            "actualWidth": contentView.bounds.width, "positions": layout,
+          ])
           guard let bitmap = contentView.bitmapImageRepForCachingDisplay(in: contentView.bounds)
           else {
             throw CocoaError(.fileWriteUnknown)
@@ -1029,6 +1069,47 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         }
       }
     }
+    let data = try JSONSerialization.data(withJSONObject: layouts, options: [.prettyPrinted, .sortedKeys])
+    try data.write(to: directory.appendingPathComponent("page-layout.json"))
+  }
+
+  private func previewPageLayout(in contentView: NSView) throws -> [String: Double] {
+    guard let scrollView = settingsTabs.selectedTabViewItem?.view as? NSScrollView,
+      let page = scrollView.documentView?.subviews.first as? NSStackView,
+      let header = page.arrangedSubviews.first,
+      let title = header.subviews.first(where: { $0.identifier?.rawValue == "settings-page-title" }),
+      let detail = header.subviews.first(where: { $0.identifier?.rawValue == "settings-page-detail" }),
+      page.arrangedSubviews.count > 1,
+      let body = page.arrangedSubviews[1] as? NSStackView,
+      let card = body.arrangedSubviews.first(where: { $0 is AdaptiveCardStackView }) else {
+      throw NSError(domain: "FlowPreview", code: 4, userInfo: [NSLocalizedDescriptionKey: "Missing settings page landmarks"])
+    }
+    var positions: [String: Double] = [:]
+    for (name, view) in [("title", title), ("description", detail), ("body", body), ("card", card)] {
+      let frame = view.convert(view.bounds, to: contentView)
+      let top = contentView.bounds.height - frame.maxY
+      positions["\(name).x"] = frame.minX
+      positions["\(name).y"] = top
+      if view is NSTextField {
+        positions["\(name).baseline"] = top + view.firstBaselineOffsetFromTop
+      }
+      guard frame.minX >= 0, frame.maxX <= contentView.bounds.width + 0.5 else {
+        throw NSError(domain: "FlowPreview", code: 5, userInfo: [NSLocalizedDescriptionKey: "\(name) extends outside the settings window"])
+      }
+    }
+    for button in tabButtons {
+      let frame = button.convert(button.bounds, to: contentView)
+      positions["navigation.\(button.tag).x"] = frame.minX
+      positions["navigation.\(button.tag).y"] = contentView.bounds.height - frame.maxY
+      guard let row = button.subviews.first(where: { $0 is NSStackView }) as? NSStackView,
+        let icon = row.arrangedSubviews.first as? NSImageView else {
+        throw NSError(domain: "FlowPreview", code: 7, userInfo: [NSLocalizedDescriptionKey: "Missing settings navigation icon"])
+      }
+      let iconFrame = icon.convert(icon.bounds, to: contentView)
+      positions["navigation.\(button.tag).icon.x"] = iconFrame.midX
+      positions["navigation.\(button.tag).icon.y"] = contentView.bounds.height - iconFrame.midY
+    }
+    return positions
   }
 
   /// Exercise real edit/cancel paths using only the synthetic preview model.
@@ -1490,6 +1571,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
       }
     }
     onShortcutCaptureStart?()
+    guard !isPreview else { return }
     shortcutCaptureMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) {
       [weak self] event in
       guard let self, let field = self.activeShortcutField else { return event }
