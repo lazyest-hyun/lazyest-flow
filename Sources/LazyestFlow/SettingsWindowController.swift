@@ -3,7 +3,9 @@ import ApplicationServices
 import Foundation
 
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
+  private let isPreview: Bool
   private let config: Config
+  private let screenshotStatusProvider: () -> Bool
   private let dockPinStatusProvider: () -> DockPinStatus
   private let keepAwakeStatusProvider: () -> KeepAwakeStatus
   private var rows: [BindingRow] = []
@@ -40,8 +42,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     title: flowText("dock.permission"), action: #selector(openAccessibilitySettings))
   private lazy var screenshotFolderButton = pathButton(action: #selector(openScreenshotDirectory))
   private lazy var screenshotWatchSwitch = settingSwitch(action: #selector(toggleScreenshotWatch))
-  private lazy var screenshotSaveFileSwitch = settingSwitch(
-    action: #selector(toggleScreenshotSaveFile))
   private lazy var screenshotPermissionButton = actionButton(
     title: flowText("dock.permission"), action: #selector(openAccessibilitySettings))
   private let screenshotStatusLabel = NSTextField(labelWithString: "")
@@ -97,10 +97,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
   init(
     config: Config,
+    previewMode: Bool = false,
     dockPinStatusProvider: @escaping () -> DockPinStatus,
+    screenshotStatusProvider: @escaping () -> Bool,
     keepAwakeStatusProvider: @escaping () -> KeepAwakeStatus
   ) {
+    self.isPreview = previewMode
     self.config = config
+    self.screenshotStatusProvider = screenshotStatusProvider
     self.dockPinStatusProvider = dockPinStatusProvider
     self.keepAwakeStatusProvider = keepAwakeStatusProvider
     let window = NSWindow(
@@ -109,12 +113,18 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
       backing: .buffered,
       defer: false
     )
+    window.contentView = FlowSettingsBackgroundView(
+      frame: NSRect(x: 0, y: 0, width: 820, height: 540))
     window.title = flowText("title")
     window.isReleasedWhenClosed = false
-    window.minSize = NSSize(width: 760, height: 500)
+    window.minSize = NSSize(width: 760, height: 540)
     super.init(window: window)
     window.delegate = self
     buildUI()
+    if previewMode {
+      configurePreview()
+      return
+    }
     observers = [
       NotificationCenter.default.addObserver(
         forName: dockPinStatusNotification, object: nil, queue: .main
@@ -191,7 +201,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
       (flowText("tab.apps"), "keyboard"),
       (flowText("tab.inputDevices"), "computermouse"),
       (flowText("tab.screenshots"), "camera.viewfinder"),
-      (flowText("tab.keepAwake"), "moon.zzz"),
+      (flowText("tab.keepAwake"), "sun.max"),
       (flowText("tab.dockPin"), "dock.rectangle"),
     ]
     for (index, definition) in tabDefinitions.enumerated() {
@@ -203,11 +213,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
       tabButtons.append(button)
       tabBar.addArrangedSubview(button)
     }
-    tabBar.widthAnchor.constraint(equalToConstant: 700).isActive = true
+    tabBar.widthAnchor.constraint(lessThanOrEqualToConstant: 900).isActive = true
     tabBarRow.addArrangedSubview(NSView())
     tabBarRow.addArrangedSubview(tabBar)
     tabBarRow.addArrangedSubview(NSView())
     root.addArrangedSubview(tabBarRow)
+    tabBar.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -28).isActive = true
 
     settingsTabs.tabViewType = .noTabsNoBorder
     settingsTabs.frame = NSRect(x: 0, y: 0, width: 792, height: 400)
@@ -302,6 +313,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     button.toolTip = tooltip
     button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: tooltip)
     button.imagePosition = .imageOnly
+    button.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
+    button.setAccessibilityLabel(tooltip)
     button.heightAnchor.constraint(equalToConstant: 32).isActive = true
     button.widthAnchor.constraint(equalToConstant: 40).isActive = true
     return button
@@ -348,21 +361,33 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     labels.orientation = .vertical
     labels.alignment = .leading
     labels.spacing = 2
-    let titleLabel = NSTextField(labelWithString: title)
+    let titleLabel = NSTextField(wrappingLabelWithString: title)
     titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-    labels.addArrangedSubview(titleLabel)
+    let heading = NSStackView(views: [titleLabel])
+    heading.spacing = 6
+    heading.alignment = .centerY
     if !detail.isEmpty {
-      let detailLabel = NSTextField(wrappingLabelWithString: detail)
-      detailLabel.textColor = .secondaryLabelColor
-      detailLabel.font = NSFont.systemFont(ofSize: 11)
-      labels.addArrangedSubview(detailLabel)
+      let help = NSImageView(
+        image: NSImage(
+          systemSymbolName: "info.circle", accessibilityDescription: detail) ?? NSImage())
+      help.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
+      help.contentTintColor = .tertiaryLabelColor
+      help.toolTip = detail
+      help.setAccessibilityLabel(detail)
+      help.setContentHuggingPriority(.required, for: .horizontal)
+      heading.addArrangedSubview(help)
+      titleLabel.toolTip = detail
+      control.toolTip = detail
+      control.setAccessibilityHelp(detail)
     }
+    control.setAccessibilityLabel(title)
+    labels.addArrangedSubview(heading)
     labels.setContentHuggingPriority(.defaultLow, for: .horizontal)
     row.addArrangedSubview(labels)
     row.addArrangedSubview(NSView())
     control.setContentHuggingPriority(.required, for: .horizontal)
     row.addArrangedSubview(control)
-    row.heightAnchor.constraint(greaterThanOrEqualToConstant: 58).isActive = true
+    row.heightAnchor.constraint(greaterThanOrEqualToConstant: 48).isActive = true
     return row
   }
 
@@ -433,7 +458,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     mouseScrollStatusLabel.stringValue = status
     let isActive = status == flowText("devices.mouse.status.active")
     let isOff = status == flowText("devices.mouse.status.off")
-    let tint: NSColor = isActive ? .systemGreen : (isOff ? .secondaryLabelColor : .systemOrange)
+    let tint: NSColor = isActive ? .systemBlue : (isOff ? .secondaryLabelColor : .systemOrange)
     mouseScrollStatusLabel.textColor = tint
     mouseScrollStatusLabel.layer?.backgroundColor =
       tint.withAlphaComponent(isOff ? 0.08 : 0.13).cgColor
@@ -518,7 +543,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     dockPinStatusLabel.stringValue = resolvedStatus.localizedText
     let isActive = resolvedStatus == .active || resolvedStatus == .blocked
     let isOff = resolvedStatus == .off
-    let tint: NSColor = isActive ? .systemGreen : (isOff ? .secondaryLabelColor : .systemOrange)
+    let tint: NSColor = isActive ? .systemBlue : (isOff ? .secondaryLabelColor : .systemOrange)
     dockPinStatusLabel.textColor = tint
     dockPinStatusLabel.layer?.backgroundColor =
       tint.withAlphaComponent(isOff ? 0.08 : 0.13).cgColor
@@ -537,7 +562,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     case .fast:
       dockTimingSwitch.state = .on
       statusKey = "dock.timing.fast"
-      tint = .systemGreen
+      tint = .systemBlue
     case .custom:
       dockTimingSwitch.state = .off
       statusKey = "dock.timing.custom"
@@ -574,7 +599,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
       tint = .systemOrange
     case .active:
       statusText = flowText("keep.status.active")
-      tint = .systemGreen
+      tint = .systemBlue
     case .waitingForPower:
       statusText = flowText("keep.status.waitingPower")
       tint = .systemOrange
@@ -591,9 +616,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
       statusText = flowText("keep.status.helperUnavailable")
       tint = .systemOrange
     }
-    keepAwakeStatusLabel.stringValue = "\(statusText) · \(powerText)"
+    keepAwakeStatusLabel.stringValue = "\(statusText)  —  \(powerText)"
     keepAwakeStatusLabel.textColor = tint
-    keepAwakeStatusLabel.toolTip = keepAwakeStatusLabel.stringValue
+    if case .helperUnavailable = resolvedStatus {
+      keepAwakeStatusLabel.toolTip = flowText("keep.helperUnavailableHelp")
+    } else {
+      keepAwakeStatusLabel.toolTip = keepAwakeStatusLabel.stringValue
+    }
   }
 
   private func keepAwakePowerText(_ power: PowerSnapshot) -> String {
@@ -657,6 +686,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     header.spacing = 8
     appsHintLabel.textColor = .secondaryLabelColor
     appsHintLabel.font = NSFont.systemFont(ofSize: 12)
+    appsHintLabel.lineBreakMode = .byTruncatingTail
+    appsHintLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     let heading = NSStackView()
     heading.orientation = .vertical
     heading.alignment = .leading
@@ -672,10 +703,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     appAddButton.imagePosition = .imageLeading
     header.addArrangedSubview(appAddButton)
     root.addArrangedSubview(header)
-    header.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
+    header.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -36).isActive = true
     root.addArrangedSubview(separator())
     root.addArrangedSubview(
-      compactSettingRow(title: flowText("apps.enabled"), control: appHotkeyControls()))
+      compactSettingRow(title: flowText("apps.enabled"), control: appHotkeysSwitch))
+    root.addArrangedSubview(
+      compactSettingRow(title: flowText("apps.hideAll"), control: appHotkeyControls()))
     let listSeparator = separator()
     root.addArrangedSubview(listSeparator)
 
@@ -721,26 +754,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   }
 
   private func appHotkeyControls() -> NSStackView {
-    let hideAllLabel = NSTextField(labelWithString: flowText("apps.hideAll"))
-    hideAllLabel.font = NSFont.systemFont(ofSize: 12)
-    hideAllLabel.textColor = .secondaryLabelColor
-    hideAllLabel.toolTip = flowText("apps.hideAllDetail")
     hideAllShortcutField.widthAnchor.constraint(equalToConstant: 110).isActive = true
     hideAllShortcutField.alignment = .center
     hideAllShortcutField.placeholderString = flowText("apps.editShortcutHint")
     hideAllEditButton.widthAnchor.constraint(equalToConstant: 72).isActive = true
     hideAllClearButton.widthAnchor.constraint(equalToConstant: 40).isActive = true
-    let switchSlot = NSView()
-    switchSlot.widthAnchor.constraint(equalToConstant: 48).isActive = true
-    switchSlot.heightAnchor.constraint(equalToConstant: 32).isActive = true
-    switchSlot.addSubview(appHotkeysSwitch)
-    appHotkeysSwitch.translatesAutoresizingMaskIntoConstraints = false
-    NSLayoutConstraint.activate([
-      appHotkeysSwitch.centerXAnchor.constraint(equalTo: switchSlot.centerXAnchor),
-      appHotkeysSwitch.centerYAnchor.constraint(equalTo: switchSlot.centerYAnchor),
-    ])
     let controls = NSStackView(views: [
-      hideAllLabel, hideAllShortcutField, hideAllEditButton, hideAllClearButton, switchSlot,
+      hideAllShortcutField, hideAllEditButton, hideAllClearButton,
     ])
     controls.orientation = .horizontal
     controls.alignment = .centerY
@@ -761,7 +781,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     let header = pageHeader(
       title: flowText("general.title"), detail: flowText("general.detail"))
     root.addArrangedSubview(header)
-    header.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
+    header.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -36).isActive = true
     root.addArrangedSubview(separator())
 
     loginLaunchStatusLabel.alignment = .center
@@ -818,7 +838,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     let header = pageHeader(title: flowText("keep.title"), detail: flowText("keep.detail"))
     root.addArrangedSubview(header)
-    header.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
+    header.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -36).isActive = true
     root.addArrangedSubview(separator())
     let approvalSlot = NSView()
     approvalSlot.widthAnchor.constraint(equalToConstant: 104).isActive = true
@@ -864,6 +884,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     keepAwakeStatusLabel.lineBreakMode = .byTruncatingTail
     keepAwakeStatusLabel.heightAnchor.constraint(equalToConstant: 22).isActive = true
     root.addArrangedSubview(keepAwakeStatusLabel)
+    keepAwakeStatusLabel.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -36).isActive =
+      true
     root.addArrangedSubview(NSView())
     item.view = root
     return item
@@ -880,7 +902,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     let header = pageHeader(title: flowText("dock.title"), detail: flowText("dock.detail"))
     root.addArrangedSubview(header)
-    header.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
+    header.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -36).isActive = true
     root.addArrangedSubview(separator())
 
     dockPinStatusLabel.alignment = .center
@@ -935,7 +957,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     let header = pageHeader(title: flowText("devices.title"), detail: flowText("devices.detail"))
     root.addArrangedSubview(header)
-    header.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
+    header.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -36).isActive = true
     root.addArrangedSubview(separator())
 
     let mouseHeading = pageHeader(title: flowText("devices.mouse.title"), detail: "")
@@ -943,7 +965,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
       titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
     }
     root.addArrangedSubview(mouseHeading)
-    mouseHeading.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
+    mouseHeading.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -36).isActive = true
 
     mouseScrollStatusLabel.alignment = .center
     mouseScrollStatusLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
@@ -978,7 +1000,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
       titleLabel.alignment = .left
     }
     root.addArrangedSubview(keyboardHeading)
-    keyboardHeading.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
+    keyboardHeading.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -36).isActive = true
     keyboardDevicesStack.orientation = .vertical
     keyboardDevicesStack.alignment = .width
     keyboardDevicesStack.spacing = 8
@@ -1002,13 +1024,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     let header = pageHeader(
       title: flowText("screenshots.title"), detail: flowText("screenshots.detail"))
     root.addArrangedSubview(header)
-    header.widthAnchor.constraint(equalTo: root.widthAnchor).isActive = true
+    header.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -36).isActive = true
     root.addArrangedSubview(separator())
 
     let pathControls = NSStackView()
     pathControls.orientation = .horizontal
     pathControls.spacing = 8
-    screenshotFolderButton.widthAnchor.constraint(equalToConstant: 390).isActive = true
+    screenshotFolderButton.widthAnchor.constraint(lessThanOrEqualToConstant: 390).isActive = true
+    screenshotFolderButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
+    screenshotFolderButton.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     pathControls.addArrangedSubview(screenshotFolderButton)
     pathControls.addArrangedSubview(
       actionButton(
@@ -1037,15 +1061,81 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         control: screenshotControls
       ))
     root.addArrangedSubview(separator())
-    root.addArrangedSubview(
-      settingRow(
-        title: flowText("screenshots.saveFile"),
-        detail: flowText("screenshots.saveFileDetail"),
-        control: screenshotSaveFileSwitch
-      ))
     root.addArrangedSubview(NSView())
     item.view = root
     return item
+  }
+
+  private func configurePreview() {
+    screenshotDirectoryPath = "~/Pictures/Screenshots"
+    updateScreenshotFolderButton()
+    loginLaunchStatusLabel.stringValue = flowText("state.off")
+    generalPermissionButton.toolTip = flowText("general.permissionsDetail")
+    screenshotWatchSwitch.state = .on
+    screenshotStatusLabel.stringValue = flowText("screenshots.status.active")
+    screenshotStatusLabel.textColor = .systemBlue
+    screenshotPermissionButton.isHidden = true
+    mouseScrollStatusLabel.stringValue = flowText("devices.mouse.status.off")
+    mousePermissionButton.isHidden = true
+    let exampleMouse = InputDeviceDescriptor(
+      id: "preview-mouse", name: "Wireless Mouse", manufacturer: "Example", transport: "Bluetooth",
+      vendorID: 1, productID: 1, locationID: 0)
+    let exampleKeyboard = InputDeviceDescriptor(
+      id: "preview-keyboard", name: "External Keyboard", manufacturer: "Example", transport: "USB",
+      vendorID: 1, productID: 2, locationID: 0)
+    mouseDevicesStack.addArrangedSubview(
+      MouseDeviceRowView(device: exampleMouse, previewMode: true))
+    keyboardDevicesStack.addArrangedSubview(
+      KeyboardDeviceRowView(device: exampleKeyboard, previewMode: true))
+    dockDisplayPopup.addItem(withTitle: "Built-in Display")
+    dockPermissionButton.isHidden = true
+    dockPinStatusLabel.stringValue = flowText("state.off")
+    dockTimingStatusLabel.stringValue = flowText("dock.timing.systemDefault")
+    keepAwakeSwitch.state = .on
+    keepAwakeApprovalButton.isHidden = true
+    keepAwakeStatusLabel.stringValue = flowText("keep.status.active")
+    keepAwakeStatusLabel.textColor = .systemBlue
+    appHotkeysSwitch.state = .on
+    appendRow(
+      AppBinding(
+        shortcut: "cmd+option+s", bundleID: "com.apple.Safari", label: "Safari", isEnabled: true))
+    appendRow(
+      AppBinding(
+        shortcut: "cmd+option+n", bundleID: "com.apple.Notes", label: "Notes", isEnabled: true))
+    configureHideAllControls()
+    updateAppsHint(count: 2)
+  }
+
+  /// Paint real AppKit views with synthetic data without opening a window or
+  /// constructing Flow runtime controllers, event taps or power helpers.
+  func renderPreviews(to directory: URL) throws {
+    guard isPreview, let window, let contentView = window.contentView else { return }
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let names = ["general", "shortcuts", "input-devices", "screenshots", "keep-awake", "dock"]
+    for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
+      window.appearance = NSAppearance(named: appearanceName)
+      let style = appearanceName == .aqua ? "light" : "dark"
+      for width in [760, 960] {
+        window.setContentSize(NSSize(width: width, height: 580))
+        for (index, name) in names.enumerated() {
+          settingsTabs.selectTabViewItem(at: index)
+          for (buttonIndex, button) in tabButtons.enumerated() {
+            button.isSelectedTab = buttonIndex == index
+          }
+          contentView.layoutSubtreeIfNeeded()
+          contentView.displayIfNeeded()
+          guard let bitmap = contentView.bitmapImageRepForCachingDisplay(in: contentView.bounds)
+          else {
+            throw CocoaError(.fileWriteUnknown)
+          }
+          contentView.cacheDisplay(in: contentView.bounds, to: bitmap)
+          guard let data = bitmap.representation(using: .png, properties: [:]) else {
+            throw CocoaError(.fileWriteUnknown)
+          }
+          try data.write(to: directory.appendingPathComponent("flow-\(name)-\(style)-\(width).png"))
+        }
+      }
+    }
   }
 
   private func loadFromDisk() {
@@ -1056,7 +1146,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     appHotkeysSwitch.state = config.appHotkeysEnabled ? .on : .off
     mouseScrollReverseSwitch.state = config.mouseScrollReverseEnabled ? .on : .off
     screenshotWatchSwitch.state = config.screenshotClipboardWatch ? .on : .off
-    screenshotSaveFileSwitch.state = config.screenshotClipboardSaveFile ? .on : .off
     keepAwakeSwitch.state = config.keepAwakeEnabled ? .on : .off
     keepAwakePowerScopeControl.selectedSegment = config.keepAwakeOnBattery ? 1 : 0
     lockOnLidCloseSwitch.state = config.lockOnLidClose ? .on : .off
@@ -1107,8 +1196,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     identity.alignment = .leading
     identity.spacing = 2
     identity.addArrangedSubview(row.label)
-    identity.addArrangedSubview(row.bundleID)
-    identity.widthAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
+    row.label.toolTip = row.binding.bundleID
+    identity.widthAnchor.constraint(greaterThanOrEqualToConstant: 140).isActive = true
     identity.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
     let appInfo = NSStackView()
@@ -1597,7 +1686,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   }
 
   private func updateScreenshotFolderButton() {
-    screenshotFolderButton.title = screenshotDirectoryPath
+    screenshotFolderButton.title =
+      NSString(string: screenshotDirectoryPath).abbreviatingWithTildeInPath
     screenshotFolderButton.toolTip = screenshotDirectoryPath
   }
 
@@ -1608,18 +1698,18 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     } else if !AXIsProcessTrusted() {
       status = flowText("screenshots.status.needsPermission")
     } else {
-      status = flowText("screenshots.status.active")
+      status = flowText(
+        screenshotStatusProvider() ? "screenshots.status.active" : "screenshots.status.failed")
     }
     screenshotStatusLabel.stringValue = status
     let isActive = status == flowText("screenshots.status.active")
     let isOff = status == flowText("screenshots.status.off")
-    let tint: NSColor = isActive ? .systemGreen : (isOff ? .secondaryLabelColor : .systemOrange)
+    let tint: NSColor = isActive ? .systemBlue : (isOff ? .secondaryLabelColor : .systemOrange)
     screenshotStatusLabel.textColor = tint
     screenshotStatusLabel.layer?.backgroundColor =
       tint.withAlphaComponent(isOff ? 0.08 : 0.13).cgColor
     screenshotPermissionButton.isHidden =
       status != flowText("screenshots.status.needsPermission")
-    screenshotSaveFileSwitch.isEnabled = screenshotWatchSwitch.state == .on
   }
 
   @objc private func toggleScreenshotWatch() {
@@ -1629,10 +1719,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     if needsAccessibility {
       openAccessibilitySettings()
     }
-  }
-
-  @objc private func toggleScreenshotSaveFile() {
-    saveRuntimeSettings()
   }
 
   @objc private func toggleLoginLaunch() {
@@ -1681,7 +1767,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
       loginLaunchSwitch.state = .on
       loginLaunchSwitch.isEnabled = true
       text = flowText("state.on")
-      tint = .systemGreen
+      tint = .systemBlue
     case .requiresApproval:
       loginLaunchSwitch.state = .on
       loginLaunchSwitch.isEnabled = true
@@ -1698,7 +1784,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
       text = flowText("general.status.install")
       tint = .systemOrange
     }
-    loginLaunchStatusLabel.stringValue = text
+    loginLaunchStatusLabel.stringValue =
+      LoginLaunchManager.shared.needsUpgradeReview
+      ? flowText("general.status.review") : text
+    loginLaunchStatusLabel.toolTip =
+      LoginLaunchManager.shared.needsUpgradeReview
+      ? flowText("general.upgradeLoginHelp") : text
     loginLaunchStatusLabel.textColor = tint
     loginLaunchStatusLabel.layer?.backgroundColor = tint.withAlphaComponent(0.1).cgColor
   }
@@ -1706,11 +1797,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   @objc private func toggleAppHotkeys() {
     let enabled = appHotkeysSwitch.state == .on
     let needsAccessibility = enabled && !AXIsProcessTrusted()
-    for row in rows {
-      row.enabledSwitch.state = enabled ? .on : .off
-      row.binding.isEnabled = enabled
-      row.refreshEnabledAppearance()
-    }
     updateAppHotkeyControls()
     savePressed()
     if needsAccessibility {
@@ -1722,11 +1808,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     let masterEnabled = appHotkeysSwitch.state == .on
     let individuallyEditable = masterEnabled && activeEditingRow == nil
     for row in rows {
-      if !masterEnabled {
-        row.enabledSwitch.state = .off
-        row.binding.isEnabled = false
-        row.refreshEnabledAppearance()
-      }
       row.enabledSwitch.isEnabled = individuallyEditable
     }
   }
@@ -1819,7 +1900,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         mouseScrollReverseEnabled: mouseScrollReverseSwitch.state == .on,
         screenshotDir: screenshotDirectoryPath,
         screenshotClipboardWatch: screenshotWatchSwitch.state == .on,
-        screenshotClipboardSaveFile: screenshotSaveFileSwitch.state == .on,
         keepAwakeEnabled: keepAwakeSwitch.state == .on,
         keepAwakeOnBattery: keepAwakePowerScopeControl.selectedSegment == 1,
         lockOnLidClose: lockOnLidCloseSwitch.state == .on,
@@ -1841,7 +1921,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         mouseScrollReverseEnabled: mouseScrollReverseSwitch.state == .on,
         screenshotDir: screenshotDirectoryPath,
         screenshotClipboardWatch: screenshotWatchSwitch.state == .on,
-        screenshotClipboardSaveFile: screenshotSaveFileSwitch.state == .on,
         keepAwakeEnabled: keepAwakeSwitch.state == .on,
         keepAwakeOnBattery: keepAwakePowerScopeControl.selectedSegment == 1,
         lockOnLidClose: lockOnLidCloseSwitch.state == .on,
@@ -1854,5 +1933,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     } catch {
       statusLabel.stringValue = "\(flowText("status.failed")): \(error.localizedDescription)"
     }
+  }
+}
+
+private final class FlowSettingsBackgroundView: NSView {
+  override var isOpaque: Bool { true }
+
+  override func draw(_ dirtyRect: NSRect) {
+    NSColor.windowBackgroundColor.setFill()
+    dirtyRect.fill()
   }
 }

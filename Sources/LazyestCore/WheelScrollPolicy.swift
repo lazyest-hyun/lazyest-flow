@@ -9,18 +9,20 @@ public enum ScrollSourceKind {
 public enum WheelScrollPolicy {
   public static func shouldReverse(_ event: CGEvent, source: ScrollSourceKind = .unknown) -> Bool {
     guard event.type == .scrollWheel, !event.flags.contains(.maskControl) else { return false }
+    // HID wheel reports and CGEvents arrive separately. A recently used mouse
+    // must never make the following trackpad gesture look like a mouse wheel.
+    guard event.getIntegerValueField(.scrollWheelEventScrollPhase) == 0,
+      event.getIntegerValueField(.scrollWheelEventMomentumPhase) == 0
+    else { return false }
     switch source {
     case .mouse:
       return true
     case .trackpad:
       return false
     case .unknown:
-      let scrollPhase = event.getIntegerValueField(.scrollWheelEventScrollPhase)
-      let momentumPhase = event.getIntegerValueField(.scrollWheelEventMomentumPhase)
-      if scrollPhase != 0 || momentumPhase != 0 {
-        return false
-      }
-      return true
+      // Unidentified continuous input can be a trackpad or touch surface.
+      // High-resolution physical wheels remain supported when HID identifies them.
+      return event.getIntegerValueField(.scrollWheelEventIsContinuous) == 0
     }
   }
 

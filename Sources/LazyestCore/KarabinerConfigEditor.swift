@@ -4,6 +4,7 @@ public enum KarabinerConfigEditorError: LocalizedError {
   case invalidRoot
   case invalidSection(String)
   case selectedProfileMissing
+  case conflictingModifierMapping
 
   public var errorDescription: String? {
     switch self {
@@ -13,6 +14,9 @@ public enum KarabinerConfigEditorError: LocalizedError {
       return "Invalid Karabiner configuration section: \(name)."
     case .selectedProfileMissing:
       return "Selected Karabiner profile not found."
+    case .conflictingModifierMapping:
+      return
+        "This keyboard has custom modifier mappings. Remove those mappings in Karabiner before applying the Windows layout."
     }
   }
 }
@@ -56,6 +60,16 @@ public enum KarabinerConfigEditor {
       device["simple_modifications"],
       section: "profiles[].devices[].simple_modifications"
     )
+    guard
+      !simpleModifications.contains(where: { modification in
+        guard let source = sourceKey(in: modification), ownedModifierKeys.contains(source) else {
+          return false
+        }
+        return !isOwnedModification(modification)
+      })
+    else {
+      throw KarabinerConfigEditorError.conflictingModifierMapping
+    }
     simpleModifications.removeAll { modification in
       guard let source = sourceKey(in: modification) else { return false }
       return ownedModifierKeys.contains(source)
@@ -99,10 +113,7 @@ public enum KarabinerConfigEditor {
         device["simple_modifications"],
         section: "profiles[].devices[].simple_modifications"
       )
-      simpleModifications.removeAll { modification in
-        guard let source = sourceKey(in: modification) else { return false }
-        return ownedModifierKeys.contains(source)
-      }
+      simpleModifications.removeAll(where: isOwnedModification)
       device["simple_modifications"] = simpleModifications
       devices[deviceIndex] = device
     }
@@ -112,20 +123,26 @@ public enum KarabinerConfigEditor {
     return try encoded(root)
   }
 
-  public static func resettingAllWindowsLayouts(in data: Data) throws -> Data {
+  public static func resettingAllWindowsLayouts(
+    in data: Data,
+    devices ownedDevices: [(vendorID: Int, productID: Int)]? = nil
+  ) throws -> Data {
     var root = try rootObject(from: data)
     var profiles = try profiles(from: root)
     for profileIndex in profiles.indices {
       var profile = profiles[profileIndex]
       var devices = try objectArray(profile["devices"], section: "profiles[].devices")
-      for deviceIndex in devices.indices where hasOwnedDeviceMappings(devices[deviceIndex]) {
+      for deviceIndex in devices.indices {
+        let isTracked =
+          ownedDevices?.contains { identifier in
+            matches(
+              devices[deviceIndex], vendorID: identifier.vendorID, productID: identifier.productID)
+          } ?? hasOwnedDeviceMappings(devices[deviceIndex])
+        guard isTracked else { continue }
         var device = devices[deviceIndex]
         var simpleModifications = try objectArray(
           device["simple_modifications"], section: "profiles[].devices[].simple_modifications")
-        simpleModifications.removeAll { modification in
-          guard let source = sourceKey(in: modification) else { return false }
-          return ownedModifierKeys.contains(source)
-        }
+        simpleModifications.removeAll(where: isOwnedModification)
         device["simple_modifications"] = simpleModifications
         devices[deviceIndex] = device
       }
@@ -145,38 +162,32 @@ public enum KarabinerConfigEditor {
       let profiles = try? profiles(from: root),
       let profile = profiles.first(where: { ($0["selected"] as? Bool) == true }),
       let devices = profile["devices"] as? [[String: Any]],
-      let device = devices.first(where: { matches($0, vendorID: vendorID, productID: productID) }),
-      let modifications = device["simple_modifications"] as? [[String: Any]]
+      let device = devices.first(where: { matches($0, vendorID: vendorID, productID: productID) })
     else {
       return false
     }
-    let expected = ownedSimpleMappings
-    var actual: [String: String] = [:]
-    for modification in modifications {
-      guard let source = sourceKey(in: modification),
-        let destination = destinationKey(in: modification)
-      else {
-        continue
-      }
-      actual[source] = destination
-    }
-    return expected.allSatisfy { actual[$0.key] == $0.value }
+    return hasOwnedDeviceMappings(device)
   }
 
   private static func hasOwnedDeviceMappings(_ device: [String: Any]) -> Bool {
     guard let modifications = device["simple_modifications"] as? [[String: Any]] else {
       return false
     }
-    var actual: [String: String] = [:]
-    for modification in modifications {
-      guard let source = sourceKey(in: modification),
-        let destination = destinationKey(in: modification)
-      else {
-        continue
-      }
-      actual[source] = destination
+    let modifierMappings = modifications.filter { modification in
+      sourceKey(in: modification).map(ownedModifierKeys.contains) ?? false
     }
-    return ownedSimpleMappings.allSatisfy { actual[$0.key] == $0.value }
+    guard modifierMappings.count == ownedModifierKeys.count else { return false }
+    return ownedSimpleMappings.allSatisfy { source, destination in
+      let expected = simpleModification(from: source, to: destination)
+      return modifications.contains { NSDictionary(dictionary: $0).isEqual(to: expected) }
+    }
+  }
+
+  private static func isOwnedModification(_ modification: [String: Any]) -> Bool {
+    guard let source = sourceKey(in: modification), let destination = ownedSimpleMappings[source]
+    else { return false }
+    return NSDictionary(dictionary: modification)
+      .isEqual(to: simpleModification(from: source, to: destination))
   }
 
   private static func matches(_ device: [String: Any], vendorID: Int, productID: Int) -> Bool {
@@ -199,11 +210,6 @@ public enum KarabinerConfigEditor {
     (modification["from"] as? [String: Any])?["key_code"] as? String
   }
 
-  private static func destinationKey(in modification: [String: Any]) -> String? {
-    guard let targets = modification["to"] as? [[String: Any]] else { return nil }
-    return targets.first?["key_code"] as? String
-  }
-
   private static func rootObject(from data: Data) throws -> [String: Any] {
     guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
       throw KarabinerConfigEditorError.invalidRoot
@@ -216,14 +222,6 @@ public enum KarabinerConfigEditor {
       throw KarabinerConfigEditorError.invalidRoot
     }
     return profiles
-  }
-
-  private static func object(_ value: Any?, section: String) throws -> [String: Any] {
-    guard let value else { return [:] }
-    guard let result = value as? [String: Any] else {
-      throw KarabinerConfigEditorError.invalidSection(section)
-    }
-    return result
   }
 
   private static func objectArray(_ value: Any?, section: String) throws -> [[String: Any]] {

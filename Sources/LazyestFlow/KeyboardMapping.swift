@@ -91,6 +91,7 @@ enum KeyboardMappingError: LocalizedError {
   case karabinerMissing
   case configMissing
   case verificationFailed
+  case conflictingModifierMapping
 
   var errorDescription: String? {
     switch self {
@@ -100,6 +101,8 @@ enum KeyboardMappingError: LocalizedError {
       return flowText("devices.keyboard.error.config")
     case .verificationFailed:
       return flowText("devices.keyboard.error.verify")
+    case .conflictingModifierMapping:
+      return flowText("devices.keyboard.error.conflict")
     }
   }
 }
@@ -108,17 +111,27 @@ private final class KarabinerKeyboardMapper {
   private let configURL = FileManager.default.homeDirectoryForCurrentUser
     .appendingPathComponent(".config/karabiner/karabiner.json")
   private lazy var backupURL = configURL.deletingLastPathComponent()
-    .appendingPathComponent("karabiner.json.macbootstrap-backup")
+    .appendingPathComponent("karabiner.json.lazyest-flow-backup")
 
   func applyWindowsLayout(to device: InputDeviceDescriptor) throws {
     try validateKarabiner()
     let current = try Data(contentsOf: configURL)
+    guard
+      !KarabinerConfigEditor.isWindowsLayoutApplied(
+        in: current, vendorID: device.vendorID, productID: device.productID
+      )
+    else { return }
+    let updated: Data
+    do {
+      updated = try KarabinerConfigEditor.applyingWindowsLayout(
+        to: current,
+        vendorID: device.vendorID,
+        productID: device.productID
+      )
+    } catch KarabinerConfigEditorError.conflictingModifierMapping {
+      throw KeyboardMappingError.conflictingModifierMapping
+    }
     try createBackupIfNeeded(from: current)
-    let updated = try KarabinerConfigEditor.applyingWindowsLayout(
-      to: current,
-      vendorID: device.vendorID,
-      productID: device.productID
-    )
     try updated.write(to: configURL, options: .atomic)
     let written = try Data(contentsOf: configURL)
     guard
@@ -133,7 +146,7 @@ private final class KarabinerKeyboardMapper {
   }
 
   func resetWindowsLayout(for device: InputDeviceDescriptor) throws {
-    try validateKarabiner()
+    guard FileManager.default.fileExists(atPath: configURL.path) else { return }
     let current = try Data(contentsOf: configURL)
     let updated = try KarabinerConfigEditor.resettingWindowsLayout(
       in: current,
@@ -143,13 +156,14 @@ private final class KarabinerKeyboardMapper {
     try updated.write(to: configURL, options: .atomic)
   }
 
-  func resetAllWindowsLayouts() throws {
+  func resetAllWindowsLayouts(devices: [(vendorID: Int, productID: Int)]) throws {
     guard FileManager.default.fileExists(atPath: configURL.path) else {
       try? FileManager.default.removeItem(at: backupURL)
       return
     }
     let current = try Data(contentsOf: configURL)
-    let updated = try KarabinerConfigEditor.resettingAllWindowsLayouts(in: current)
+    let updated = try KarabinerConfigEditor.resettingAllWindowsLayouts(
+      in: current, devices: devices)
     try updated.write(to: configURL, options: .atomic)
     try? FileManager.default.removeItem(at: backupURL)
   }
@@ -184,7 +198,9 @@ final class KeyboardMappingController {
   private let mapper = KarabinerKeyboardMapper()
 
   func savedPreset(for device: InputDeviceDescriptor) -> KeyboardMappingPreset? {
-    guard store.profile(for: device) != nil, mapper.isWindowsLayoutApplied(to: device) else {
+    guard let profile = store.profile(for: device), profile.preset != .unchanged,
+      mapper.isWindowsLayoutApplied(to: device)
+    else {
       return nil
     }
     return .windowsToMac
@@ -201,13 +217,17 @@ final class KeyboardMappingController {
   }
 
   func reset(_ device: InputDeviceDescriptor) throws {
+    guard let profile = store.profile(for: device), profile.preset != .unchanged else { return }
     try mapper.resetWindowsLayout(for: device)
     try store.remove(for: device)
     postChanged()
   }
 
   func resetAll() throws {
-    try mapper.resetAllWindowsLayouts()
+    try mapper.resetAllWindowsLayouts(
+      devices: store.allProfiles().filter { $0.preset != .unchanged }
+        .map { (vendorID: $0.vendorID, productID: $0.productID) }
+    )
     try store.clear()
     postChanged()
   }
@@ -219,7 +239,9 @@ final class KeyboardMappingController {
       uniquingKeysWith: { first, _ in first }
     )
     for profile in store.allProfiles() {
-      guard let device = connected[profile.id] else { continue }
+      guard profile.preset != .unchanged, let device = connected[profile.id] else { continue }
+      let role = inventory.role(for: device)
+      guard role != .mouse, role != .ignored else { continue }
       inventory.confirmKeyboard(device)
       do {
         try mapper.applyWindowsLayout(to: device)
@@ -240,15 +262,19 @@ final class KeyboardMappingController {
 
 final class KeyboardDeviceRowView: AdaptiveCardStackView {
   let device: InputDeviceDescriptor
-  private let controller: KeyboardMappingController
+  private let controller: KeyboardMappingController?
   private let presetPopup = NSPopUpButton()
   private let statusLabel = NSTextField(labelWithString: "")
   private let actionButton = NSButton()
   var onResult: ((Result<Void, Error>) -> Void)?
 
-  init(device: InputDeviceDescriptor, controller: KeyboardMappingController = .shared) {
+  init(
+    device: InputDeviceDescriptor,
+    controller: KeyboardMappingController? = nil,
+    previewMode: Bool = false
+  ) {
     self.device = device
-    self.controller = controller
+    self.controller = previewMode ? nil : (controller ?? .shared)
     super.init(frame: .zero)
     buildUI()
     reloadState()
@@ -278,17 +304,18 @@ final class KeyboardDeviceRowView: AdaptiveCardStackView {
     let name = NSTextField(labelWithString: device.name)
     name.font = NSFont.systemFont(ofSize: 13, weight: .medium)
     name.lineBreakMode = .byTruncatingTail
+    name.maximumNumberOfLines = 1
+    name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     let detailParts = [
       device.manufacturer,
       device.transport,
       String(format: "VID %04X · PID %04X", device.vendorID, device.productID),
     ].filter { !$0.isEmpty }
-    let detail = NSTextField(labelWithString: detailParts.joined(separator: " · "))
-    detail.textColor = .secondaryLabelColor
-    detail.font = NSFont.systemFont(ofSize: 10)
+    name.toolTip = ([device.name] + detailParts).joined(separator: "\n")
     labels.addArrangedSubview(name)
-    labels.addArrangedSubview(detail)
-    labels.widthAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
+    labels.addArrangedSubview(statusLabel)
+    labels.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    labels.widthAnchor.constraint(greaterThanOrEqualToConstant: 100).isActive = true
     addArrangedSubview(labels)
     addArrangedSubview(NSView())
 
@@ -298,13 +325,13 @@ final class KeyboardDeviceRowView: AdaptiveCardStackView {
     }
     presetPopup.target = self
     presetPopup.action = #selector(selectionChanged)
-    presetPopup.widthAnchor.constraint(equalToConstant: 220).isActive = true
+    presetPopup.widthAnchor.constraint(equalToConstant: 190).isActive = true
+    presetPopup.setAccessibilityLabel(device.name)
+    presetPopup.isEnabled = controller != nil
     addArrangedSubview(presetPopup)
 
     statusLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
-    statusLabel.alignment = .center
-    statusLabel.widthAnchor.constraint(equalToConstant: 66).isActive = true
-    addArrangedSubview(statusLabel)
+    statusLabel.alignment = .left
 
     actionButton.target = self
     actionButton.action = #selector(performAction)
@@ -313,7 +340,7 @@ final class KeyboardDeviceRowView: AdaptiveCardStackView {
     actionButton.heightAnchor.constraint(equalToConstant: 30).isActive = true
     addArrangedSubview(actionButton)
 
-    let roleButton = DeviceRoleMenuButton(device: device)
+    let roleButton = DeviceRoleMenuButton(device: device, previewMode: controller == nil)
     roleButton.onResult = { [weak self] result in self?.onResult?(result) }
     addArrangedSubview(roleButton)
   }
@@ -326,7 +353,7 @@ final class KeyboardDeviceRowView: AdaptiveCardStackView {
   }
 
   private func reloadState() {
-    let saved = controller.savedPreset(for: device)
+    let saved = controller?.savedPreset(for: device)
     select(saved ?? .unchanged)
     refreshControls(saved: saved)
   }
@@ -340,7 +367,7 @@ final class KeyboardDeviceRowView: AdaptiveCardStackView {
   }
 
   @objc private func selectionChanged() {
-    refreshControls(saved: controller.savedPreset(for: device))
+    refreshControls(saved: controller?.savedPreset(for: device))
   }
 
   private func refreshControls(saved: KeyboardMappingPreset?) {
@@ -357,11 +384,12 @@ final class KeyboardDeviceRowView: AdaptiveCardStackView {
       statusLabel.stringValue = flowText("devices.keyboard.status.none")
       statusLabel.textColor = .secondaryLabelColor
       actionButton.title = flowText("devices.keyboard.apply")
-      actionButton.isEnabled = selected != .unchanged
+      actionButton.isEnabled = controller != nil && selected != .unchanged
     }
   }
 
   @objc private func performAction() {
+    guard let controller else { return }
     let saved = controller.savedPreset(for: device)
     let selected = selectedPreset
     do {

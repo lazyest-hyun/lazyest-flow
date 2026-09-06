@@ -677,7 +677,7 @@ final class ScreenshotWatcher {
   }
 
   var isActive: Bool {
-    isRunning && config.screenshotClipboardWatch
+    isRunning && shortcutTap?.isValid == true && config.screenshotClipboardWatch
   }
 
   func start() {
@@ -686,7 +686,6 @@ final class ScreenshotWatcher {
       NSLog("Screenshot shortcut monitor needs Accessibility permission")
       return
     }
-    isRunning = true
     startShortcutMonitor()
   }
 
@@ -718,34 +717,39 @@ final class ScreenshotWatcher {
         self.beginSwappedScreenshotCapture(event)
         return nil
       }
+      // A held key must not leak a repeated native file shortcut while the
+      // first clipboard capture is waiting for physical modifiers to release.
+      if event.getIntegerValueField(.keyboardEventAutorepeat) != 0,
+        ScreenshotShortcutPolicy.shouldSwap(
+          keyCode: Int(event.getIntegerValueField(.keyboardEventKeycode)),
+          flags: event.flags, isRepeat: false)
+      {
+        return nil
+      }
       return Unmanaged.passUnretained(event)
     }
     guard keyTap.start() else { return }
     shortcutTap = keyTap
+    isRunning = true
   }
 
   private func shouldSwapScreenshotShortcut(_ event: CGEvent) -> Bool {
-    let keyCode = Int(event.getIntegerValueField(.keyboardEventKeycode))
-    let flags = event.flags
-    return flags.contains(.maskCommand)
-      && flags.contains(.maskShift)
-      && (keyCode == 20 || keyCode == 21)
+    ScreenshotShortcutPolicy.shouldSwap(
+      keyCode: Int(event.getIntegerValueField(.keyboardEventKeycode)),
+      flags: event.flags,
+      isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0)
   }
 
   private func beginSwappedScreenshotCapture(_ event: CGEvent) {
     let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
     let flags = event.flags
-    let convertsToClipboard = !flags.contains(.maskControl)
-    let savesClipboardCapture = convertsToClipboard && config.screenshotClipboardSaveFile
     nativeCaptureSequence &+= 1
     let sequence = nativeCaptureSequence
-    let pasteboardChangeCount =
-      savesClipboardCapture ? NSPasteboard.general.changeCount : nil
 
     screenshotControlQueue.async { [weak self] in
       guard let self, self.isCurrentNativeCapture(sequence) else { return }
 
-      let keyReleaseDeadline = Date().addingTimeInterval(1.5)
+      let keyReleaseDeadline = Date().addingTimeInterval(5)
       while Date() < keyReleaseDeadline,
         self.screenshotShortcutKeysArePressed(triggerKeyCode: keyCode),
         self.isCurrentNativeCapture(sequence)
@@ -759,36 +763,18 @@ final class ScreenshotWatcher {
 
       usleep(120_000)
       guard self.isCurrentNativeCapture(sequence) else { return }
-      var forwardedFlags = flags
-      if convertsToClipboard {
-        forwardedFlags.insert(.maskControl)
-      } else {
-        forwardedFlags.remove(.maskControl)
-      }
+      let forwardedFlags = ScreenshotShortcutPolicy.forwardedFlags(flags)
       self.postKey(
         keyCode: keyCode,
         flags: forwardedFlags,
         userData: self.nativeCaptureMarker
       )
 
-      guard savesClipboardCapture, let pasteboardChangeCount else { return }
-      let pngData = self.waitForNativeClipboardImage(
-        from: pasteboardChangeCount,
-        sequence: sequence,
-        timeout: keyCode == 21 ? 60 : 2
-      )
-      guard self.isCurrentNativeCapture(sequence) else { return }
-      guard let pngData else {
-        NSLog("LazyestFlow screenshot: native clipboard did not expose image data")
-        return
-      }
-      self.saveClipboardCapture(pngData, sequence: sequence)
     }
   }
 
   private func screenshotShortcutKeysArePressed(triggerKeyCode: CGKeyCode) -> Bool {
-    let keyCodes: [CGKeyCode] = [triggerKeyCode, 54, 55, 56, 60]
-    return keyCodes.contains {
+    return ScreenshotShortcutPolicy.releaseKeys(triggerKeyCode: triggerKeyCode).contains {
       CGEventSource.keyState(.combinedSessionState, key: $0)
     }
   }
@@ -797,33 +783,6 @@ final class ScreenshotWatcher {
     DispatchQueue.main.sync {
       isRunning && nativeCaptureSequence == sequence
     }
-  }
-
-  private func waitForNativeClipboardImage(
-    from initialChangeCount: Int,
-    sequence: UInt64,
-    timeout: TimeInterval
-  ) -> Data? {
-    let deadline = Date().addingTimeInterval(timeout)
-    while Date() < deadline, isCurrentNativeCapture(sequence) {
-      let pngData: Data? = DispatchQueue.main.sync {
-        let pasteboard = NSPasteboard.general
-        guard pasteboard.changeCount != initialChangeCount else { return nil }
-        if let pngData = pasteboard.data(forType: .png) {
-          return pngData
-        }
-        guard
-          let tiffData = pasteboard.data(forType: .tiff),
-          let representation = NSBitmapImageRep(data: tiffData)
-        else {
-          return nil
-        }
-        return representation.representation(using: .png, properties: [:])
-      }
-      if let pngData { return pngData }
-      usleep(5_000)
-    }
-    return nil
   }
 
   private func postKey(
@@ -842,46 +801,6 @@ final class ScreenshotWatcher {
     keyUp.setIntegerValueField(.eventSourceUserData, value: userData)
     keyDown.post(tap: .cghidEventTap)
     keyUp.post(tap: .cghidEventTap)
-  }
-
-  private func saveClipboardCapture(_ pngData: Data, sequence: UInt64) {
-    guard config.screenshotClipboardSaveFile, isCurrentNativeCapture(sequence) else { return }
-    guard let fileURL = nextScreenshotFileURL() else { return }
-    do {
-      try pngData.write(to: fileURL, options: .atomic)
-    } catch {
-      NSLog(
-        "LazyestFlow screenshot: failed to save clipboard capture %@",
-        error.localizedDescription
-      )
-    }
-  }
-
-  private func nextScreenshotFileURL() -> URL? {
-    let directory = URL(fileURLWithPath: config.screenshotDir, isDirectory: true)
-    let defaults = UserDefaults(suiteName: "com.apple.screencapture")
-    let configuredName = defaults?.string(forKey: "name")?
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-    let fallbackName =
-      Locale.current.language.languageCode?.identifier == "ko"
-      ? "스크린샷"
-      : "Screen Shot"
-    let prefix = configuredName?.isEmpty == false ? configuredName! : fallbackName
-
-    let formatter = DateFormatter()
-    formatter.locale = Locale.current
-    formatter.dateFormat = "yyyy-MM-dd a h.mm.ss"
-    let stem = "\(prefix) \(formatter.string(from: Date()))"
-
-    let fileManager = FileManager.default
-    for suffix in 0..<100 {
-      let name = suffix == 0 ? "\(stem).png" : "\(stem)(\(suffix + 1)).png"
-      let candidate = directory.appendingPathComponent(name)
-      if !fileManager.fileExists(atPath: candidate.path) {
-        return candidate
-      }
-    }
-    return nil
   }
 
 }

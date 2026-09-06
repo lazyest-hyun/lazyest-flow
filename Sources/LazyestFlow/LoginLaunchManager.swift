@@ -40,6 +40,7 @@ final class LoginLaunchManager {
   private let fileManager: FileManager
   private let userID: uid_t
   private let legacyPropertyListURL: URL
+  private let preferenceURL: URL
 
   init(
     fileManager: FileManager = .default,
@@ -48,6 +49,10 @@ final class LoginLaunchManager {
   ) {
     self.fileManager = fileManager
     self.userID = userID
+    self.preferenceURL =
+      homeDirectory
+      .appendingPathComponent("Library/Application Support/Lazyest Flow", isDirectory: true)
+      .appendingPathComponent("login-launch.conf")
     self.legacyPropertyListURL =
       homeDirectory
       .appendingPathComponent("Library/LaunchAgents", isDirectory: true)
@@ -66,9 +71,9 @@ final class LoginLaunchManager {
     case .requiresApproval:
       return .requiresApproval
     case .notRegistered:
-      return legacyRegistrationExists ? .needsRepair : .disabled
+      return legacyRegistrationExists || desiredEnabled == true ? .needsRepair : .disabled
     case .notFound:
-      return legacyRegistrationExists ? .needsRepair : .disabled
+      return legacyRegistrationExists || desiredEnabled == true ? .needsRepair : .disabled
     @unknown default:
       return .needsRepair
     }
@@ -80,12 +85,32 @@ final class LoginLaunchManager {
     } else {
       try disable()
     }
+    try persistDesiredState(enabled)
+  }
+
+  private var desiredEnabled: Bool? {
+    guard
+      let value = try? String(contentsOf: preferenceURL, encoding: .utf8)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    else { return nil }
+    return value == "1" ? true : (value == "0" ? false : nil)
+  }
+
+  var needsUpgradeReview: Bool {
+    desiredEnabled == nil && LegacyFlowIdentity.hasLegacyPreferences && status == .disabled
+  }
+
+  private func persistDesiredState(_ enabled: Bool) throws {
+    try fileManager.createDirectory(
+      at: preferenceURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try (enabled ? "1\n" : "0\n").write(to: preferenceURL, atomically: true, encoding: .utf8)
   }
 
   func migrateLegacyRegistrationIfNeeded() {
-    guard legacyRegistrationExists else { return }
+    guard legacyRegistrationExists || desiredEnabled == true else { return }
     do {
       try enable(refreshRegistration: false)
+      try persistDesiredState(true)
     } catch {
       NSLog("Login item migration was not completed: \(error.localizedDescription)")
     }

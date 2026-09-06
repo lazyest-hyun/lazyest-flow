@@ -24,6 +24,7 @@ struct InputDeviceDescriptor: Hashable {
 struct ScrollInputContext {
   let source: ScrollSourceKind
   let deviceID: String?
+  var allowsCustomization = true
 }
 
 enum InputDeviceRole: String, Codable, CaseIterable {
@@ -162,8 +163,11 @@ final class InputDeviceInventory {
   }
 
   func externalKeyboards() -> [InputDeviceDescriptor] {
-    keyboardCandidates().filter {
-      roleStore.role(for: $0) == .keyboard
+    let pointingDeviceIDs = Set(mouseCandidates().map(\.mappingID))
+    return keyboardCandidates().filter { device in
+      let role = roleStore.role(for: device)
+      return role.includes(.keyboard)
+        || (role == .unknown && !pointingDeviceIDs.contains(device.mappingID))
     }
   }
 
@@ -197,7 +201,8 @@ final class InputDeviceInventory {
   }
 
   func confirmKeyboard(_ device: InputDeviceDescriptor) {
-    guard roleStore.role(for: device) != .keyboard else { return }
+    // A saved layout must not undo an explicit mouse, combined, or ignored role.
+    guard roleStore.role(for: device) == .unknown else { return }
     do {
       try roleStore.set(.keyboard, for: device)
       postInventoryChanged()
@@ -301,6 +306,11 @@ final class InputDeviceInventory {
   }
 
   private func deviceDidDisconnect(_ device: IOHIDDevice) {
+    if deviceRecords[ObjectIdentifier(device)]?.descriptor.mappingID
+      == recentScrollInput?.context.deviceID
+    {
+      recentScrollInput = nil
+    }
     deviceRecords.removeValue(forKey: ObjectIdentifier(device))
     postInventoryChanged()
   }
@@ -329,7 +339,10 @@ final class InputDeviceInventory {
     }
     recentScrollInput = (
       ScrollInputContext(
-        source: source, deviceID: source == .mouse ? record.descriptor.mappingID : nil),
+        source: source,
+        deviceID: source == .mouse ? record.descriptor.mappingID : nil,
+        allowsCustomization: ![.keyboard, .ignored].contains(roleStore.role(for: record.descriptor))
+      ),
       ProcessInfo.processInfo.systemUptime
     )
   }

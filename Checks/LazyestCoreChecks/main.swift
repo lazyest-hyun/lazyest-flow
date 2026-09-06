@@ -60,7 +60,7 @@ check(
   "High-resolution mouse was not reversed")
 
 check(
-  InputDeviceRolePolicy.isTrackpad(identity: "Estaid's Magic Trackpad"),
+  InputDeviceRolePolicy.isTrackpad(identity: "Example Magic Trackpad"),
   "Magic Trackpad was not classified")
 check(
   !InputDeviceRolePolicy.isTrackpad(identity: "Logitech USB Receiver"),
@@ -91,7 +91,7 @@ private let karabinerFixture = """
       "complex_modifications": {
         "rules": [
           {"description":"Unrelated rule","manipulators":[]},
-          {"description":"MacBootstrap: right_command to F18","manipulators":[]}
+          {"description":"Existing input-method rule: right_command to F18","manipulators":[]}
         ]
       },
       "devices": []
@@ -125,7 +125,7 @@ do {
       productID: 50503
     ), "Karabiner layout was not reset")
   check(
-    resetText.contains("MacBootstrap: right_command to F18"),
+    resetText.contains("Existing input-method rule: right_command to F18"),
     "Setup-owned global F18 rule was removed by device reset")
   check(resetText.contains("Unrelated rule"), "Unrelated Karabiner rule was removed")
 
@@ -165,7 +165,7 @@ do {
       productID: 20
     ), "Second Flow-owned keyboard mapping survived complete reset")
   check(
-    allResetText.contains("MacBootstrap: right_command to F18"),
+    allResetText.contains("Existing input-method rule: right_command to F18"),
     "Setup-owned global F18 rule was removed by complete Flow reset")
   check(
     allResetText.contains("Unrelated rule"),
@@ -401,6 +401,36 @@ check(
   ShortcutPolicy.hasGlobalActivationModifier(["shift", "cmd"]), "Command shortcut was rejected")
 
 check(
+  ScreenshotShortcutPolicy.shouldSwap(
+    keyCode: 20, flags: [.maskCommand, .maskShift], isRepeat: false),
+  "Full-screen screenshot not recognized")
+check(
+  ScreenshotShortcutPolicy.shouldSwap(
+    keyCode: 21, flags: [.maskCommand, .maskShift, .maskControl], isRepeat: false),
+  "Control region screenshot not recognized")
+check(
+  !ScreenshotShortcutPolicy.shouldSwap(
+    keyCode: 23, flags: [.maskCommand, .maskShift], isRepeat: false),
+  "Screenshot toolbar was intercepted")
+check(
+  !ScreenshotShortcutPolicy.shouldSwap(
+    keyCode: 20, flags: [.maskCommand, .maskShift, .maskAlternate], isRepeat: false),
+  "Option shortcut was intercepted")
+check(
+  !ScreenshotShortcutPolicy.shouldSwap(
+    keyCode: 20, flags: [.maskCommand, .maskShift], isRepeat: true), "Key repeat was intercepted")
+check(
+  ScreenshotShortcutPolicy.forwardedFlags([.maskCommand, .maskShift]).contains(.maskControl),
+  "Default screenshot did not become clipboard capture")
+check(
+  !ScreenshotShortcutPolicy.forwardedFlags([.maskCommand, .maskShift, .maskControl]).contains(
+    .maskControl), "Control screenshot did not become file capture")
+check(
+  ScreenshotShortcutPolicy.releaseKeys(triggerKeyCode: 21).contains(59)
+    && ScreenshotShortcutPolicy.releaseKeys(triggerKeyCode: 21).contains(62),
+  "Physical Control release is not awaited")
+
+check(
   ScreenshotFilePolicy.acceptsEncodedByteCount(1024), "Normal screenshot byte count was rejected")
 check(!ScreenshotFilePolicy.acceptsEncodedByteCount(0), "Empty screenshot was accepted")
 check(
@@ -424,6 +454,23 @@ check(
 check(
   !ScreenshotFilePolicy.acceptsImage(width: 100, height: 100, frameCount: 2),
   "Multi-frame screenshot was accepted")
+
+failures.append(contentsOf: inputRegressionFailures())
+check(
+  SleepPreventionPolicy.resolve(
+    enabled: true, includeBattery: true, onACPower: false, batteryPercent: nil,
+    thermalSafetyRequired: false) == .lowBattery, "Unknown battery level did not pause")
+check(
+  LidInputSourcePolicy.isKnownKorean(sourceIdentifier: "com.apple.inputmethod.Korean.2SetKorean"),
+  "Apple Korean input source not recognized")
+check(
+  !LidInputSourcePolicy.isKnownKorean(sourceIdentifier: "com.apple.keylayout.ABC"),
+  "ABC source was misclassified")
+check(
+  !LidInputSourcePolicy.isKnownKorean(sourceIdentifier: "org.youknowone.inputmethod.Gureum.han2"),
+  "Ambiguous third-party source was guessed")
+check(
+  !LidInputSourcePolicy.isKnownKorean(sourceIdentifier: nil), "Missing input source was guessed")
 
 if failures.isEmpty {
   print("LAZYEST_CORE_CHECKS_OK")

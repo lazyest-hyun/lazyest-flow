@@ -12,7 +12,9 @@ echo "  swift: $(command -v swift >/dev/null 2>&1 && echo present || echo missin
 echo "  app: $([ -d "$APP_PATH" ] && echo installed || echo missing)"
 echo "  process: $(pgrep -x "$APP_EXECUTABLE" >/dev/null 2>&1 && echo running || echo stopped)"
 login_maintenance_version="$(
-  /usr/libexec/PlistBuddy -c 'Print :MacBootstrapLoginLaunchMaintenanceVersion' \
+  /usr/libexec/PlistBuddy -c 'Print :LazyestLoginLaunchMaintenanceVersion' \
+    "$APP_PATH/Contents/Info.plist" 2>/dev/null || \
+    /usr/libexec/PlistBuddy -c 'Print :MacBootstrapLoginLaunchMaintenanceVersion' \
     "$APP_PATH/Contents/Info.plist" 2>/dev/null || true
 )"
 if [ "$login_maintenance_version" = "2" ] \

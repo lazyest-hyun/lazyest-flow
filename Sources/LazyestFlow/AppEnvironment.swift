@@ -32,6 +32,7 @@ func flowSharedLanguageConfigPath() -> URL {
 }
 
 func flowSavedLanguageCode() -> String {
+  if let preview = flowPreviewLanguage { return preview.rawValue }
   let path = flowSharedLanguageConfigPath()
   if let value = try? String(contentsOf: path, encoding: .utf8).trimmingCharacters(
     in: .whitespacesAndNewlines),
@@ -39,7 +40,8 @@ func flowSavedLanguageCode() -> String {
   {
     return value
   }
-  return UserDefaults.standard.string(forKey: "MacBootstrapLanguage")
+  return UserDefaults.standard.string(forKey: "LazyestFlowLanguage")
+    ?? LegacyFlowIdentity.savedLanguageCode()
     ?? FlowLanguage.automatic.rawValue
 }
 
@@ -49,10 +51,13 @@ func saveFlowLanguageCode(_ code: String) throws {
   try FileManager.default.createDirectory(
     at: path.deletingLastPathComponent(), withIntermediateDirectories: true)
   try code.write(to: path, atomically: true, encoding: .utf8)
-  UserDefaults.standard.set(code, forKey: "MacBootstrapLanguage")
+  UserDefaults.standard.set(code, forKey: "LazyestFlowLanguage")
 }
 
+var flowPreviewLanguage: FlowLanguage?
+
 func flowLanguage() -> FlowLanguage {
+  if let preview = flowPreviewLanguage { return preview }
   let selected = FlowLanguage(rawValue: flowSavedLanguageCode()) ?? .automatic
   if selected != .automatic {
     return selected
@@ -79,6 +84,8 @@ private let koreanAgentStrings: [String: String] = [
     "즉시 스크린샷, 앱 단축키, 마우스 스크롤, 덮개 잠금, Dock 고정만 손쉬운 사용 권한을 사용합니다. 슬립모드 방지와 기본 설정은 이 권한 없이 사용할 수 있습니다.",
   "general.permissionsOpen": "권한 설정",
   "general.status.approval": "승인 필요",
+  "general.status.review": "자동 실행 확인",
+  "general.upgradeLoginHelp": "이전 앱의 로그인 항목은 macOS에서 직접 관리합니다. 업데이트 후 자동 실행을 원하면 이 스위치를 켜세요.",
   "general.status.repair": "복구 필요",
   "general.status.install": "앱 설치 필요",
   "general.remove": "Flow 제거",
@@ -154,32 +161,32 @@ private let koreanAgentStrings: [String: String] = [
   "devices.keyboard.status.applied": "적용됨",
   "devices.keyboard.apply": "적용",
   "devices.keyboard.reset": "초기화",
+  "devices.keyboard.error.conflict": "Karabiner에서 이 키보드의 기존 보조 키 매핑을 해제한 뒤 적용하세요.",
   "devices.keyboard.error.karabiner": "Karabiner-Elements가 필요합니다.",
   "devices.keyboard.error.config": "Karabiner 설정 파일을 찾을 수 없습니다.",
   "devices.keyboard.error.verify": "Karabiner 키 매핑 검증에 실패했습니다.",
   "devices.unknown": "알 수 없는 장치",
   "screenshots.title": "스크린샷",
-  "screenshots.detail": "기본 단축키는 클립보드 캡처로, Control을 누른 단축키는 macOS 기본 파일 캡처로 서로 바꿉니다.",
+  "screenshots.detail": "⌘⇧3/4로 복사하고, Control을 함께 누르면 파일로 저장합니다.",
   "screenshots.folder": "저장 폴더",
   "screenshots.choose": "변경",
   "screenshots.open": "폴더 열기",
-  "screenshots.copy": "스크린샷 단축키 동작 교환",
+  "screenshots.copy": "스크린샷을 클립보드로",
   "screenshots.copyDetail": "⌘⇧3/4는 클립보드로 복사하고, ⌃⌘⇧3/4는 파일 저장과 macOS 네이티브 프리뷰를 사용합니다.",
-  "screenshots.saveFile": "클립보드 캡처도 파일로 저장",
-  "screenshots.saveFileDetail": "클립보드에 들어간 동일한 PNG를 위 저장 폴더에 저장합니다. 별도 프리뷰는 표시하지 않습니다.",
   "state.on": "켜짐",
   "state.off": "꺼짐",
   "keep.title": "슬립모드 방지",
-  "keep.detail": "잠금 화면이나 디스플레이가 꺼진 상태에서도 유휴 잠자기를 막아 작업을 계속합니다.",
+  "keep.detail": "덮개를 닫으면 화면을 끄고 작업을 계속합니다.",
   "keep.prevent": "슬립모드 방지 사용",
   "keep.powerScope": "적용 범위",
-  "keep.powerScopeDetail": "배터리 20% 이하에서는 안전을 위해 자동으로 중지합니다.",
+  "keep.powerScopeDetail": "배터리 20% 이하 또는 심한 발열 시 자동으로 중지합니다. 직접 잠자려면 먼저 슬립모드 방지를 끄세요.",
   "keep.powerOnly": "전원 연결 시만",
   "keep.includeBattery": "배터리 포함",
   "keep.lockOnLid": "덮개를 닫으면 즉시 잠금",
-  "keep.lockOnLidDetail": "덮개를 감지하면 로그인 화면으로 전환하고 디스플레이를 끕니다.",
-  "keep.sleepOnKoreanLid": "한/A 상태로 덮개 잠자기 결정",
-  "keep.sleepOnKoreanLidDetail": "한글 상태에서 덮으면 즉시 잠자고, A 상태에서는 잠자기를 요청하지 않습니다.",
+  "keep.lockOnLidDetail": "화면은 항상 꺼집니다. 이 옵션을 켜면 잠금도 함께 적용합니다.",
+  "keep.sleepOnKoreanLid": "한국어 입력 중에는 덮개 잠자기",
+  "keep.sleepOnKoreanLidDetail":
+    "macOS 기본 한국어 입력 소스를 선택했을 때만 덮개 잠자기를 허용합니다. 구름 등 외부 입력기의 내부 한/A 상태는 macOS가 공개하지 않아 지원하지 않습니다.",
   "keep.status.off": "꺼짐",
   "keep.status.activating": "시작 중",
   "keep.status.active": "실행 중",
@@ -188,6 +195,7 @@ private let koreanAgentStrings: [String: String] = [
   "keep.status.thermal": "발열 보호로 일시 정지",
   "keep.status.helperApproval": "관리자 보조 도구 설치 필요",
   "keep.status.helperUnavailable": "슬립 방지 시작 실패",
+  "keep.helperUnavailableHelp": "다른 잠자기 관리 앱이 사용 중일 수 있습니다. 덮개 제어는 한 앱에서만 켜세요.",
   "keep.power.ac": "전원 연결",
   "keep.power.battery": "배터리",
   "keep.power.batteryPercent": "배터리 %d%%",
@@ -219,10 +227,11 @@ private let koreanAgentStrings: [String: String] = [
   "status.failed": "저장 실패",
   "menu.settings": "설정 열기",
   "menu.appHotkeys": "앱 단축키",
-  "menu.screenshotClipboard": "스크린샷 단축키 교환",
+  "menu.screenshotClipboard": "스크린샷 클립보드 복사",
   "screenshots.status.off": "꺼짐",
   "screenshots.status.needsPermission": "Accessibility 권한 필요",
-  "screenshots.status.active": "단축키 교환 활성",
+  "screenshots.status.active": "사용 중",
+  "screenshots.status.failed": "다시 로드 필요",
   "menu.keepAwake": "슬립모드 방지",
   "menu.dockPin": "Dock 고정",
   "menu.reload": "다시 불러오기",
@@ -247,6 +256,9 @@ private let englishAgentStrings: [String: String] = [
     "Only instant screenshots, app hotkeys, mouse scrolling, lid lock, and Dock pin use Accessibility permission. Prevent Sleep and basic settings work without it.",
   "general.permissionsOpen": "Open Settings",
   "general.status.approval": "Approval required",
+  "general.status.review": "Check login setting",
+  "general.upgradeLoginHelp":
+    "macOS manages the previous app’s login item. Turn this switch on to start the updated app at login.",
   "general.status.repair": "Needs repair",
   "general.status.install": "Install app first",
   "general.remove": "Remove Flow",
@@ -326,6 +338,8 @@ private let englishAgentStrings: [String: String] = [
   "devices.keyboard.status.applied": "Applied",
   "devices.keyboard.apply": "Apply",
   "devices.keyboard.reset": "Reset",
+  "devices.keyboard.error.conflict":
+    "Remove this keyboard’s existing modifier mappings in Karabiner, then try again.",
   "devices.keyboard.error.karabiner": "Karabiner-Elements is required.",
   "devices.keyboard.error.config": "Karabiner configuration was not found.",
   "devices.keyboard.error.verify": "Failed to verify the Karabiner key mapping.",
@@ -336,28 +350,26 @@ private let englishAgentStrings: [String: String] = [
   "screenshots.folder": "Save folder",
   "screenshots.choose": "Change",
   "screenshots.open": "Open folder",
-  "screenshots.copy": "Swap screenshot shortcut behavior",
+  "screenshots.copy": "Copy screenshots to clipboard",
   "screenshots.copyDetail":
     "⌘⇧3/4 copies to the clipboard; ⌃⌘⇧3/4 saves a file and uses the native macOS preview.",
-  "screenshots.saveFile": "Also save clipboard captures",
-  "screenshots.saveFileDetail":
-    "Saves the exact PNG placed on the clipboard to the folder above without showing a separate preview.",
   "state.on": "On",
   "state.off": "Off",
   "keep.title": "Prevent Sleep",
   "keep.detail":
-    "Prevents idle sleep while locked or with the display off so work can continue.",
+    "Keep work running with the lid closed and the display off.",
   "keep.prevent": "Prevent Sleep",
   "keep.powerScope": "Power Scope",
-  "keep.powerScopeDetail": "Stops automatically at 20% battery to protect the Mac.",
+  "keep.powerScopeDetail":
+    "Stops at 20% battery or high temperature. Turn Prevent Sleep off before putting the Mac to sleep manually.",
   "keep.powerOnly": "Power only",
   "keep.includeBattery": "Include battery",
   "keep.lockOnLid": "Lock immediately when lid closes",
   "keep.lockOnLidDetail":
-    "Switches to the login screen and turns displays off when the lid closes.",
-  "keep.sleepOnKoreanLid": "Use Korean/A mode for lid sleep",
+    "The display always turns off on lid close. Enable this to lock the Mac as well.",
+  "keep.sleepOnKoreanLid": "Allow lid sleep with Korean input",
   "keep.sleepOnKoreanLidDetail":
-    "Sleeps immediately when closed in Korean mode; does not request sleep in A mode.",
+    "Applies to Apple Korean input sources. Third-party input methods such as Gureum do not expose their internal Korean/A state and are not supported.",
   "keep.status.off": "Off",
   "keep.status.activating": "Starting",
   "keep.status.active": "Active",
@@ -366,6 +378,8 @@ private let englishAgentStrings: [String: String] = [
   "keep.status.thermal": "Paused for thermal safety",
   "keep.status.helperApproval": "Administrator helper installation required",
   "keep.status.helperUnavailable": "Unable to start sleep prevention",
+  "keep.helperUnavailableHelp":
+    "Another sleep-control app may be active. Use one lid controller at a time.",
   "keep.power.ac": "Power connected",
   "keep.power.battery": "Battery",
   "keep.power.batteryPercent": "Battery %d%%",
@@ -398,10 +412,11 @@ private let englishAgentStrings: [String: String] = [
   "status.failed": "Save failed",
   "menu.settings": "Open Settings",
   "menu.appHotkeys": "App Hotkeys",
-  "menu.screenshotClipboard": "Swap Screenshot Shortcuts",
+  "menu.screenshotClipboard": "Copy Screenshots",
   "screenshots.status.off": "Off",
   "screenshots.status.needsPermission": "Accessibility permission required",
-  "screenshots.status.active": "Shortcut swap active",
+  "screenshots.status.active": "Active",
+  "screenshots.status.failed": "Reload required",
   "menu.keepAwake": "Prevent Sleep",
   "menu.dockPin": "Dock Pin",
   "menu.reload": "Reload",

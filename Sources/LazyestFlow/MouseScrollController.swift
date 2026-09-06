@@ -48,7 +48,9 @@ final class MouseScrollController {
   private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
     guard type == .scrollWheel else { return Unmanaged.passUnretained(event) }
     let context = InputDeviceInventory.shared.recentScrollContext()
-    guard context.source != .trackpad else { return Unmanaged.passUnretained(event) }
+    guard context.source != .trackpad, context.allowsCustomization else {
+      return Unmanaged.passUnretained(event)
+    }
     let shouldReverse = preferences.shouldReverse(
       deviceID: context.deviceID,
       defaultValue: config.mouseScrollReverseEnabled

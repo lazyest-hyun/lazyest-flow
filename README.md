@@ -1,93 +1,107 @@
 # Lazyest Flow
 
-한국어 사용자를 위한 상시 실행 macOS 메뉴 막대 앱입니다. 일회성 초기 설정 도구인 [Lazyest Setup](https://github.com/lazyest-hyun/lazyest-setup)과 독립적으로 설치하고 업데이트합니다.
+단축키, 입력 장치, 스크린샷과 잠자기를 한곳에서 관리하는 macOS 메뉴 막대 앱입니다. [Lazyest Setup](https://github.com/lazyest-hyun/lazyest-setup)과 독립적으로 사용할 수 있습니다.
 
-이 저장소는 빌드된 앱이나 자동 업데이트를 배포하지 않습니다. 사용자는 소스를 확인한 뒤 자신의 Mac에서 직접 빌드합니다.
+![Flow 스크린샷 설정](docs/images/screenshots.png)
 
-## AI Agent 설치
+## 설치와 배포 상태
 
-사용자가 **설치**를 명시적으로 요청했다면, 추가 조사나 dry-run 없이 아래 한 명령으로 설치하고 실행합니다.
+2026년 9월 6일 기준 **1.2.1 Apple Silicon DMG**를 로컬에서 준비하고 앱·DMG의 Developer ID 서명, Apple 공증, 스테이플과 Gatekeeper 검증을 완료했습니다. 이 새 버전은 아직 공개 GitHub Release에 게시하지 않았습니다. 공개 페이지에 남아 있는 PKG는 이전 버전이며 이번 DMG와 다릅니다.
 
-```sh
-(workdir="$(mktemp -d)" && trap 'rm -rf "$workdir"' EXIT && git clone --depth 1 --quiet https://github.com/lazyest-hyun/lazyest-flow.git "$workdir" && "$workdir/bootstrap.sh" install && open "/Applications/Lazyest Flow.app")
-```
+공개되면 DMG와 SHA-256 체크섬을 확인하고 앱을 `/Applications`로 옮겨 실행합니다. 지금 소스에서 설치하려면 다음 안내를 따릅니다.
 
-- 최신 소스만 얕게 받아 현재 Mac에서 빌드하고 `/Applications/Lazyest Flow.app`에 설치한 뒤 임시 소스와 빌드 산출물을 제거합니다.
-- 외부 바이너리, Gatekeeper 우회, Homebrew, 기본 기능 활성화는 사용하지 않습니다.
-- Swift 도구 모음이 없으면 `xcode-select --install`로 macOS 설치 확인을 열고, 사용자가 승인한 뒤 위 명령을 다시 실행합니다.
-- 메뉴 막대 앱이라 실행 중 Dock 아이콘은 숨지만 Finder와 Dock의 응용 프로그램 스택에는 표시됩니다.
+## 시작하기
 
-## 기능
-
-- 사용자가 등록한 앱을 단축키로 숨기기, 다시 표시하기, 실행하기
-- 등록된 실행 앱 전체를 한 단축키로 숨기기. 앱 단축키 사용이 켜져 있을 때만 동작하며 기본 단축키는 없음
-- 선택하면 Mac 로그인 시 설정 창 없이 메뉴 막대에서 자동 실행
-- 기본 스크린샷 단축키와 Control 변형의 동작을 교환하고, 클립보드 캡처의 동일 PNG 파일 저장을 선택적으로 지원
-- 화면 잠금과 디스플레이 꺼짐을 허용하면서 시스템 잠자기 방지. 전원 연결 시만 또는 배터리 포함 선택 가능
-- 덮개를 닫아도 작업을 유지하고, 선택하면 덮개를 닫는 즉시 로그인 화면으로 전환
-- 메뉴 막대에서 앱 단축키, 스크린샷 복사, 슬립모드 방지, Dock 고정을 즉시 켜고 끄기
-- Dock을 선택한 모니터로 옮긴 뒤 Mission Control, 응용 프로그램 윈도우, 데스크탑 핫코너를 유지하면서 해당 모니터에 고정. 하단, 왼쪽, 오른쪽 Dock 지원
-- Dock 탭에서 자동 숨김 Dock의 반응 시간을 빠르게 적용하거나 macOS 기본값으로 초기화
-- 실제 입력으로 식별된 마우스별로 `기본값 따름 / 세로 반전 / macOS 기본 방향`을 선택하고 내장·Magic Trackpad 스크롤은 유지
-- 외장 키보드별 Option/Command 배열 변환. Flow는 장치별 조작키만 바꾸며, F18 한/영 전환은 Setup이 관리하는 Karabiner Complex 규칙을 그대로 사용
-- 한국어와 영어 UI
-
-새 설치에서는 로그인 자동 실행을 포함한 모든 기능이 꺼져 있고 기본 앱 단축키도 없습니다.
-
-## 수동 설치
-
-macOS 13 이상과 Swift 도구 모음이 필요합니다.
+macOS 13 이상과 Xcode Command Line Tools의 Swift가 필요합니다. 저장소가 비공개인 동안에는 접근 권한이 있는 GitHub 계정으로 내려받아야 합니다.
 
 ```sh
-git clone https://github.com/hyunn515/lazyest-flow.git
+git clone https://github.com/lazyest-hyun/lazyest-flow.git
 cd lazyest-flow
-./bootstrap.sh audit
 ./bootstrap.sh install
 open "/Applications/Lazyest Flow.app"
 ```
 
-`install`은 현재 체크아웃의 Swift 소스를 항상 새로 빌드한 뒤 `/Applications`에 복사합니다. 외부 바이너리를 받아오거나 실행하지 않으며, 앱을 자동 실행하거나 기능을 자동으로 켜지 않고 기존 사용자 설정도 덮어쓰지 않습니다.
+Swift가 없다면 `xcode-select --install`로 Apple 개발 도구를 설치한 뒤 다시 실행하세요. Homebrew나 전체 Xcode는 필수가 아닙니다.
 
-설치 후 Flow의 `일반` 탭에서 `로그인 시 자동 실행`을 켜면 다음 macOS 로그인부터 설정 창 없이 메뉴 막대에서 시작합니다. macOS 네이티브 로그인 항목으로 등록되므로 `시스템 설정 > 일반 > 로그인 항목 및 확장 프로그램 > 로그인 시 열기`에서 `Lazyest Flow` 이름으로 확인하고 제어할 수 있습니다. 관리자 인증은 필요하지 않으며, Flow에서 `종료`를 선택하면 다음 로그인 전까지 임의로 다시 실행하지 않습니다.
+설치는 현재 소스를 새로 빌드하고 `/Applications/Lazyest Flow.app`에 검증한 앱을 교체합니다. 기존 설정과 로그인 자동 실행은 보존합니다. 새 설치에서는 모든 기능이 꺼져 있으며 앱 단축키도 비어 있습니다. 메뉴 막대에서 설정을 열고 필요한 기능만 켜세요.
 
-빌드 스크립트는 `MacBootstrap Local Code Signing` 인증서가 있으면 자동으로 사용하고, 없으면 hardened runtime을 포함한 ad-hoc 서명으로 돌아갑니다. 어느 쪽이든 Apple Developer Program이나 Team ID 없이 모든 기능을 사용할 수 있습니다. 별도의 로컬 인증서를 쓰려면 이름을 지정할 수 있습니다.
-
-```sh
-MAC_BOOTSTRAP_AGENT_CODESIGN_IDENTITY="Your Local Code Signing Identity" ./bootstrap.sh install
-```
-
-슬립모드 방지를 처음 켜면 macOS 관리자 인증 창이 한 번 표시됩니다. 인증하면 현재 콘솔 사용자, Flow 경로와 코드 해시만 허용하는 최소 root helper가 고정 시스템 경로에 설치되며, 평소 실행에는 비밀번호가 필요하지 않습니다. helper가 설치된 상태에서 소스를 새로 빌드해 업데이트하면 새 코드 해시를 고정하기 위해 관리자 인증을 한 번 다시 요청합니다.
-
-## 슬립모드 방지 정책
-
-- 기능이 켜져 있는 동안 잠금 화면과 디스플레이 자동 꺼짐은 유지하지만 시스템 잠자기는 막습니다.
-- `전원 연결 시만`은 배터리로 전환하면 자동으로 중지하고, `배터리 포함`은 전원 없이도 계속 실행합니다.
-- 배터리 포함 상태에서도 잔량 20% 이하 또는 심각한 발열 상태에서는 자동으로 중지합니다.
-- `덮개를 닫으면 즉시 잠금`은 별도 선택 사항입니다. 켜면 덮개 닫힘을 감지해 로그인 화면으로 전환하고 디스플레이를 끄지만 백그라운드 작업은 유지합니다.
-- Flow가 비정상 종료되거나 heartbeat가 끊기면 helper가 90초 안에 자신이 켠 잠자기 방지를 해제합니다.
-
-## 명령어
+설치 결과는 다음 명령으로 확인할 수 있습니다.
 
 ```sh
-./bootstrap.sh help
-./bootstrap.sh version
 ./bootstrap.sh audit
-./bootstrap.sh build [--dry-run]
-./bootstrap.sh install [--dry-run]
-./bootstrap.sh uninstall [--dry-run]
 ```
 
-## 배포 패키지 준비
+## 스크린샷
 
-공개 배포용 PKG는 Developer ID Application, Developer ID Installer 인증서와 Apple 공증 프로필이 준비된 Mac에서만 만듭니다. 값 자체는 저장소에 기록하지 않고 셸 환경으로 전달합니다.
+`스크린샷을 클립보드로`를 켜면 다음처럼 동작합니다.
+
+| 단축키 | 결과 |
+| --- | --- |
+| ⌘⇧3 | 전체 화면을 클립보드로 복사 |
+| ⌘⇧4 | 선택한 영역 또는 창을 클립보드로 복사 |
+| ⌃⌘⇧3 또는 ⌃⌘⇧4 | 선택한 폴더에 파일 저장, macOS 미리보기 사용 |
+| ⌘⇧5 | macOS 스크린샷 도구 그대로 사용 |
+
+단축키에서 손을 떼면 캡처가 시작됩니다. 영역 선택 취소는 Esc입니다. 파일 저장 위치는 macOS와 공유합니다. 클립보드와 파일을 동시에 저장하는 기능은 제공하지 않으며, 다른 앱의 클립보드 내용을 읽거나 보관하지 않습니다. 접근성 권한이 필요합니다.
+
+## 슬립모드 방지
+
+![Flow 잠자기 설정](docs/images/keep-awake.png)
+
+- 덮개를 닫으면 화면을 끄고 백그라운드 작업을 유지합니다.
+- `전원 연결 시만`과 `배터리 포함` 중 적용 범위를 선택합니다.
+- 배터리 20% 이하, 잔량 확인 실패 또는 심한 발열 시 자동으로 중지합니다.
+- `덮개를 닫으면 즉시 잠금`으로 화면 꺼짐과 잠금을 별도로 선택합니다.
+- `한국어 입력 중에는 덮개 잠자기`는 macOS 기본 한국어 입력 소스를 사용합니다. 구름 등 외부 입력기의 내부 한/A 상태는 macOS가 공개하지 않아 지원하지 않습니다.
+- 직접 Mac을 잠자기 상태로 전환하려면 먼저 이 기능을 끄세요.
+
+처음 켤 때 macOS 관리자 인증으로 전원 보조 도구를 설치합니다. 재빌드한 앱은 새 코드 해시 승인이 필요합니다. 보조 도구는 승인한 사용자와 코드 해시를 확인하고 배터리, 발열, 90초 통신 제한을 별도로 감시합니다. Flow가 종료되면 자신이 적용한 잠자기 방지를 해제합니다. 다른 전원 관리 앱이 같은 시스템 설정을 변경하면 정책이 충돌할 수 있으므로 한 앱에서 관리하는 것을 권장합니다.
+
+## 입력 장치와 단축키
+
+![Flow 입력 장치 설정](docs/images/input-devices.png)
+
+외장 마우스는 장치별 스크롤 방향을 선택합니다. 내장 트랙패드와 Magic Trackpad의 스크롤은 유지합니다. 복합 USB 리시버는 실제 입력을 관찰해 분류하며 필요하면 장치 종류를 직접 선택할 수 있습니다.
+
+키보드의 Windows → Mac 조작키 변환에는 [Karabiner-Elements](https://karabiner-elements.pqrs.org/)가 필요합니다. Flow가 만든 장치별 매핑만 초기화하며 기존 사용자 매핑과 충돌하면 적용을 중단합니다. F18 한/영 전환 규칙은 Setup 또는 Karabiner에서 설정합니다.
+
+앱 단축키는 등록한 앱을 열거나 숨깁니다. 전체 기능을 껐다 켜도 앱별 선택은 유지됩니다. `등록 앱 모두 숨기기`에는 기본 단축키가 없으므로 원하는 키를 직접 지정하세요.
+
+## 권한과 업데이트
+
+| 기능 | 필요한 설정 |
+| --- | --- |
+| 로그인 자동 실행 | 일반 탭에서 선택, macOS 로그인 항목 승인 |
+| 스크린샷, 스크롤 반전, 덮개 잠금, Dock 고정 | 시스템 설정의 손쉬운 사용 |
+| 덮개 잠자기 방지 | 전원 보조 도구 관리자 인증 |
+| 키보드 조작키 변환 | Karabiner-Elements 설치 및 권한 |
+
+1.2.1부터 앱 식별자는 `com.lazyest.flow`입니다. 소스 설치는 이전 설정과 로그인 항목을 이전합니다. 이전 버전에서 앱을 직접 교체하거나 PKG로 업데이트했다면 일반 탭의 `로그인 시 자동 실행`을 한 번 확인하세요. 이후 선택은 저장하여 업데이트 후 복구합니다. 접근성 권한은 새 앱에 다시 허용해야 할 수 있습니다. 이전 식별자는 설치 이전 및 정리에만 사용합니다.
+
+설정은 `~/Library/Application Support/Lazyest Flow/`에 저장됩니다. `일반 > Flow 제거`에서 앱과 보조 도구를 제거하고 설정, Dock 반응, 스크린샷 위치, 키보드 매핑의 초기화 범위를 선택할 수 있습니다.
+
+## 개발 및 검증
 
 ```sh
-LAZYEST_CODESIGN_IDENTITY="Developer ID Application: ..." \
-LAZYEST_INSTALLER_IDENTITY="Developer ID Installer: ..." \
-LAZYEST_TEAM_ID="..." \
-LAZYEST_NOTARY_PROFILE="lazyest-notary" \
-./scripts/package-macos-release.sh --preflight
+./scripts/check.sh
+./bootstrap.sh build
+./scripts/package-app.sh "$PWD/dist/Lazyest Flow.app"
+.build/release/LazyestFlow --render-previews /tmp/lazyest-flow-previews ko
+```
 
+`--render-previews`는 실제 AppKit 설정 UI를 예시 데이터로 그립니다. 앱을 띄우거나 입력, 전원, 클립보드 설정을 변경하지 않습니다. 문서의 이미지는 이 모드로 생성한 예시이며 개인 장치명이나 사용자 경로가 없습니다. 실제 덮개 닫기, 잠금, 화면 캡처와 외장 장치 동작은 사용하는 Mac에서 별도로 확인해야 합니다.
+
+로컬 빌드는 기본적으로 ad-hoc 서명합니다. 별도 인증서를 쓰려면 `LAZYEST_CODESIGN_IDENTITY`를 지정하세요. 명시한 인증서를 사용할 수 없으면 기존 앱을 보존하고 설치를 중단합니다.
+
+```sh
+LAZYEST_CODESIGN_IDENTITY="Your Code Signing Identity" ./bootstrap.sh install
+```
+
+## 배포 패키지
+
+현재 배포 경로는 아래 `DMG 패키지`입니다. 별도 PKG가 필요한 배포자는 Developer ID Application 및 Installer 인증서와 공증 프로필을 준비해 아래 선택 절차를 사용합니다. 값은 저장소에 기록하지 않습니다.
+
+```sh
 LAZYEST_CODESIGN_IDENTITY="Developer ID Application: ..." \
 LAZYEST_INSTALLER_IDENTITY="Developer ID Installer: ..." \
 LAZYEST_TEAM_ID="..." \
@@ -95,35 +109,20 @@ LAZYEST_NOTARY_PROFILE="lazyest-notary" \
 ./scripts/package-macos-release.sh
 ```
 
-완료되면 `dist/Lazyest-Flow-<version>-macOS.pkg`와 SHA-256 파일이 생깁니다. 이 명령은 GitHub Release나 App Store 등록을 만들지 않습니다.
+`--preflight`를 붙이면 준비 상태만 확인합니다. 완료 시 `dist/Lazyest-Flow-<version>-macOS.pkg`와 SHA-256 파일이 생성됩니다. 이 명령은 GitHub에 게시하거나 App Store에 제출하지 않습니다. 소스 빌드 성공과 Apple 서명, 공증, 실제 사용 검증은 각각 확인해야 합니다.
 
-런타임 설정은 `~/Library/Application Support/Lazyest Flow/`에 저장됩니다. 로그인 자동 실행은 macOS `SMAppService`가 관리하며 업데이트 시 보존되고 앱 제거 시 해제됩니다. `승인 필요`가 표시되면 시스템 설정의 로그인 항목에서 Lazyest Flow를 허용하면 됩니다. 메뉴의 체크는 실제 실행 중인 기능을 뜻하며, 요청 상태와 실제 런타임 상태가 다르면 혼합 상태로 표시됩니다. 복합 USB 수신기는 실제 키 입력과 포인터 입력으로 키보드·마우스를 구분하고 역할을 기억합니다. 자동 식별되지 않는 수신기는 입력 장치 탭에서 한 번 직접 종류를 선택할 수 있습니다. 키보드 매핑은 Karabiner의 장치별 Simple Modifications와 전역 Complex Modification을 사용하며, 구조가 올바른 JSON을 보존해 쓴 뒤 실제 매핑 검증에 성공한 경우에만 `적용됨`으로 표시됩니다. 앱 단축키, 마우스 스크롤 반전, 덮개 즉시 잠금, Dock 고정에는 Accessibility 권한이 필요합니다.
+## 보안 및 라이선스
 
-일반 탭의 `Flow 제거`는 앱, 로그인 자동 실행과 전원 보조 도구를 제거합니다. 확인창에서 Flow 데이터, Dock 반응, 스크린샷 저장 위치, Flow가 적용한 Karabiner 매핑을 각각 초기화할지 선택합니다. 접근성 허용은 macOS에서 직접 관리합니다.
+취약점은 [보안 정책](SECURITY.md)의 비공개 제보 경로를 이용해 주세요. [The Unlicense](UNLICENSE)를 따릅니다.
 
-## 구조
+### DMG 패키지
 
-- `Sources/LazyestFlow`: 메뉴, 설정 UI, 런타임 컨트롤러와 macOS 연동
-- `Sources/LazyestPowerHelper`: 설치 시 고정한 Flow 코드 해시의 요청만 받는 최소 권한 잠자기 helper
-- `Sources/LazyestCore`: 부작용 없는 정책과 구조화된 Karabiner 편집
-- `Checks/LazyestCoreChecks`: 전체 Xcode 없이 실행 가능한 회귀 체크
-- `scripts`: 빌드, 제한된 앱 패키징, 설치와 제거
-
-## 개발
+현재 배포 형식은 DMG입니다. Developer ID Application으로 서명한 앱을 준비하면 Installer 인증서 없이 패키징할 수 있습니다. 이 명령은 앱과 DMG를 각각 Apple에 공증하고 Gatekeeper 검사를 통과한 파일 및 상대 경로 SHA-256 체크섬을 남깁니다. 공개 업로드는 수행하지 않습니다.
 
 ```sh
-swift run LazyestCoreChecks
-xcrun swift-format lint --recursive Sources Checks Package.swift
-./bootstrap.sh build
-./scripts/package-app.sh "$PWD/dist/Lazyest Flow.app"
+LAZYEST_CODESIGN_IDENTITY="Developer ID Application: <publisher> (<team-id>)" \
+LAZYEST_NOTARY_PROFILE="lazyest-notary" \
+scripts/package-dmg.sh "$PWD/dist/Lazyest Flow.app" "$PWD/dist/Lazyest-Flow-macOS.dmg"
 ```
 
-SwiftPM으로 빌드한 앱 번들은 `dist/Lazyest Flow.app`에 생성됩니다.
-
-## 보안
-
-취약점은 공개 이슈 대신 [보안 정책](SECURITY.md)의 비공개 제보 경로를 이용해 주세요.
-
-## License
-
-[The Unlicense](UNLICENSE)
+DMG를 열고 앱을 Applications로 옮긴 뒤 `/Applications`의 앱을 실행합니다. 현재 검증한 1.2.1 DMG는 Apple Silicon용입니다. 다른 CPU용 배포를 추가하려면 해당 빌드와 실행을 별도로 검증해야 합니다. 소스 변경 후에는 앱을 다시 빌드하고 서명해야 합니다.

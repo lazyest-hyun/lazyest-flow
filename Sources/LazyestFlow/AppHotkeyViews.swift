@@ -22,9 +22,11 @@ class AdaptiveCardStackView: NSStackView {
     guard let layer else { return }
     effectiveAppearance.performAsCurrentDrawingAppearance {
       let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-      layer.backgroundColor = NSColor.controlBackgroundColor
+      layer.backgroundColor =
+        NSColor.controlBackgroundColor
         .withAlphaComponent(isDark ? 0.35 : 0.9).cgColor
-      layer.borderColor = NSColor.separatorColor
+      layer.borderColor =
+        NSColor.separatorColor
         .withAlphaComponent(isDark ? 0.28 : 0.5).cgColor
     }
   }
@@ -217,7 +219,7 @@ final class SettingsTabButton: NSButton {
     tabLabel.font = NSFont.systemFont(ofSize: 12, weight: .medium)
     tabLabel.alignment = .center
     tabLabel.lineBreakMode = .byTruncatingTail
-    tabIcon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 12, weight: .medium)
+    tabIcon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
     tabIcon.setContentHuggingPriority(.required, for: .horizontal)
 
     let content = NSStackView(views: [tabIcon, tabLabel])
@@ -251,15 +253,15 @@ final class SettingsTabButton: NSButton {
       let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
       layer.backgroundColor =
         (isSelectedTab
-        ? NSColor.controlAccentColor.withAlphaComponent(isDark ? 0.2 : 0.12)
+        ? NSColor.systemBlue.withAlphaComponent(isDark ? 0.2 : 0.12)
         : NSColor.controlBackgroundColor.withAlphaComponent(isDark ? 0.55 : 0.72)).cgColor
-      layer.borderWidth = 1
+      layer.borderWidth = isSelectedTab ? 1 : 0
       layer.borderColor =
         (isSelectedTab
-        ? NSColor.controlAccentColor.withAlphaComponent(isDark ? 0.45 : 0.35)
+        ? NSColor.systemBlue.withAlphaComponent(isDark ? 0.45 : 0.35)
         : NSColor.separatorColor.withAlphaComponent(isDark ? 0.4 : 0.55)).cgColor
       tabLabel.textColor = isSelectedTab ? .labelColor : .secondaryLabelColor
-      tabIcon.contentTintColor = isSelectedTab ? .controlAccentColor : .secondaryLabelColor
+      tabIcon.contentTintColor = isSelectedTab ? .systemBlue : .secondaryLabelColor
     }
   }
 }

@@ -45,44 +45,61 @@ final class KeepAwakeController {
   private let powerMonitor = SystemPowerSourceMonitor()
   private let lidMonitor = LidStateMonitor()
   private var thermalObserver: NSObjectProtocol?
+  private var inputSourceObserver: NSObjectProtocol?
+  private var wakeObserver: NSObjectProtocol?
   private var assertionID = IOPMAssertionID(0)
   private var assertionActive = false
   private var helperReady = false
   private var helperRequestInFlight = false
   private var lidSleepDisabled = false
-  private var lidTransitionGeneration = 0
+  private var lidEffectsApplied = false
+  private var lastKnownKoreanInput = KeyboardInputMode.isKorean
   private var heartbeatTimer: Timer?
   private var generation = 0
+  private var shuttingDown = false
   private(set) var status: KeepAwakeStatus
 
   init(config: Config) {
     self.config = config
     self.status = .off(powerMonitor.snapshot)
-    powerMonitor.onChange = { [weak self] in
-      self?.evaluate()
-    }
+    powerMonitor.onChange = { [weak self] in self?.evaluate() }
     lidMonitor.onChange = { [weak self] isClosed in
-      self?.handleLidChange(isClosed: isClosed)
+      guard let self else { return }
+      self.lidEffectsApplied = false
+      self.evaluate()
     }
     thermalObserver = NotificationCenter.default.addObserver(
       forName: ProcessInfo.thermalStateDidChangeNotification,
-      object: ProcessInfo.processInfo,
-      queue: .main
+      object: ProcessInfo.processInfo, queue: .main
+    ) { [weak self] _ in self?.evaluate() }
+    inputSourceObserver = DistributedNotificationCenter.default().addObserver(
+      forName: Notification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String),
+      object: nil, queue: .main
     ) { [weak self] _ in
-      self?.evaluate()
+      // Lock-screen input sources need not match the user's last selected source.
+      guard let self, !self.lidMonitor.isClosed else { return }
+      self.evaluate()
+    }
+    wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+      forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+    ) { [weak self] _ in
+      guard let self else { return }
+      self.lidEffectsApplied = false
+      self.powerMonitor.refresh()
+      self.evaluate()
     }
   }
 
   deinit {
     shutdown()
-    if let thermalObserver {
-      NotificationCenter.default.removeObserver(thermalObserver)
+    if let thermalObserver { NotificationCenter.default.removeObserver(thermalObserver) }
+    if let inputSourceObserver {
+      DistributedNotificationCenter.default().removeObserver(inputSourceObserver)
     }
+    if let wakeObserver { NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver) }
   }
 
-  var isActive: Bool {
-    status.isActive && assertionActive && helperReady
-  }
+  var isActive: Bool { status.isActive && assertionActive && helperReady }
 
   func reload() {
     config.reloadBootstrap()
@@ -99,15 +116,13 @@ final class KeepAwakeController {
     helperRequestInFlight = true
     publish(.activating(powerMonitor.snapshot))
     helper.install { [weak self] success, message in
-      guard let self else { return }
+      guard let self, !self.shuttingDown else { return }
       self.helperRequestInFlight = false
+      self.helperReady = false
       if success {
-        self.helperReady = false
         self.evaluate()
       } else {
-        if let message {
-          NSLog("Power helper installation was not completed: \(message)")
-        }
+        if let message { NSLog("Power helper installation was not completed: \(message)") }
         self.stopIdleSleepAssertion()
         self.publish(.helperApprovalRequired(self.powerMonitor.snapshot))
       }
@@ -115,15 +130,14 @@ final class KeepAwakeController {
   }
 
   func shutdown(waitForHelper: Bool = false) {
+    guard !shuttingDown else { return }
+    shuttingDown = true
     generation += 1
-    lidTransitionGeneration += 1
     stopHeartbeat()
     stopIdleSleepAssertion()
-    if helper.status == .installed {
+    if PowerHelperInstaller.hasInstalledFiles {
       var completed = false
-      helper.setSleepDisabled(false) { _, _ in
-        completed = true
-      }
+      helper.setSleepDisabled(false) { _, _ in completed = true }
       if waitForHelper {
         let deadline = Date().addingTimeInterval(3)
         while !completed && Date() < deadline {
@@ -132,14 +146,13 @@ final class KeepAwakeController {
       }
     }
     helperReady = false
-    helperRequestInFlight = false
     lidSleepDisabled = false
   }
 
   private func evaluate() {
     dispatchPrecondition(condition: .onQueue(.main))
+    guard !shuttingDown else { return }
     generation += 1
-    let currentGeneration = generation
     let power = powerMonitor.snapshot
     let thermalState = ProcessInfo.processInfo.thermalState
     let decision = SleepPreventionPolicy.resolve(
@@ -149,87 +162,88 @@ final class KeepAwakeController {
       batteryPercent: power.batteryPercent,
       thermalSafetyRequired: thermalState == .serious || thermalState == .critical
     )
-
+    let target: KeepAwakeStatus
     switch decision {
-    case .disabled:
-      deactivateHelper(generation: currentGeneration, status: .off(power))
-    case .waitingForPower:
-      deactivateHelper(generation: currentGeneration, status: .waitingForPower(power))
-    case .lowBattery:
-      deactivateHelper(generation: currentGeneration, status: .lowBattery(power))
-    case .thermalSafety:
-      deactivateHelper(generation: currentGeneration, status: .thermalSafety(power))
-    case .active:
-      activate(generation: currentGeneration, power: power)
+    case .disabled: target = .off(power)
+    case .waitingForPower: target = .waitingForPower(power)
+    case .lowBattery: target = .lowBattery(power)
+    case .thermalSafety: target = .thermalSafety(power)
+    case .active: target = .active(power)
     }
+    if !lidMonitor.isClosed { lastKnownKoreanInput = KeyboardInputMode.isKorean }
+    let action = LidSleepPolicy.resolve(
+      keepAwakeEnabled: decision == .active,
+      inputModePolicyEnabled: config.sleepOnKoreanLidClose,
+      isKoreanInputSource: lastKnownKoreanInput
+    )
+    let preventIdleSleep = decision == .active && !(lidMonitor.isClosed && action == .requestSleep)
+    if preventIdleSleep {
+      guard startIdleSleepAssertion() else {
+        publish(.helperUnavailable(power))
+        return
+      }
+    } else {
+      stopIdleSleepAssertion()
+    }
+
+    // Arm before the lid closes: an asynchronous helper request made only after
+    // a clamshell notification can lose the race with the system going to sleep.
+    synchronizeHelper(enabled: action == .preventSleep, target: target, action: action)
   }
 
-  private func activate(generation currentGeneration: Int, power: PowerSnapshot) {
-    guard startIdleSleepAssertion() else {
-      publish(.helperUnavailable(power))
-      return
-    }
+  private func synchronizeHelper(
+    enabled: Bool, target: KeepAwakeStatus, action: LidSleepPolicy.Action
+  ) {
+    guard !helperRequestInFlight else { return }
     guard helper.status == .installed else {
+      stopHeartbeat()
       stopIdleSleepAssertion()
       helperReady = false
-      publish(.helperApprovalRequired(power))
+      publish(config.keepAwakeEnabled ? .helperApprovalRequired(powerMonitor.snapshot) : target)
       return
     }
-    guard !helperRequestInFlight else {
-      publish(.activating(power))
+    if helperReady && lidSleepDisabled == enabled {
+      publish(target)
+      applyLidEffects(action: action)
       return
     }
+    let currentGeneration = generation
     helperRequestInFlight = true
-    publish(.activating(power))
-    helper.setSleepDisabled(false) { [weak self] success, message in
-      guard let self else { return }
+    if enabled { publish(.activating(powerMonitor.snapshot)) }
+    helper.setSleepDisabled(enabled) { [weak self] success, message in
+      guard let self, !self.shuttingDown else { return }
       self.helperRequestInFlight = false
+      self.helperReady = success
+      // An unsuccessful restore may still leave an owned override in place.
+      if success { self.lidSleepDisabled = enabled }
+      if success && enabled { self.startHeartbeat() } else { self.stopHeartbeat() }
       guard self.generation == currentGeneration else {
         self.evaluate()
         return
       }
-      self.helperReady = success
-      self.lidSleepDisabled = false
       guard success else {
-        if let message {
-          NSLog("Unable to prepare lid sleep prevention: \(message)")
-        }
+        if let message { NSLog("Unable to update sleep prevention: \(message)") }
         self.stopIdleSleepAssertion()
         self.publish(.helperUnavailable(self.powerMonitor.snapshot))
         return
       }
-      self.publish(.active(self.powerMonitor.snapshot))
-      if self.lidMonitor.isClosed {
-        self.applyLidPolicy(isClosed: true)
-      }
+      self.publish(target)
+      self.applyLidEffects(action: action)
     }
   }
 
-  private func deactivateHelper(generation currentGeneration: Int, status target: KeepAwakeStatus) {
-    lidTransitionGeneration += 1
-    stopHeartbeat()
-    stopIdleSleepAssertion()
-    guard helper.status == .installed else {
-      helperReady = false
-      helperRequestInFlight = false
-      lidSleepDisabled = false
-      publish(target)
-      return
+  private func applyLidEffects(action: LidSleepPolicy.Action) {
+    guard lidMonitor.isClosed, !lidEffectsApplied else { return }
+    lidEffectsApplied = true
+    ScreenLocker.sleepDisplays(lockSession: config.lockOnLidClose) { [weak self] in
+      guard let self else { return false }
+      return !self.shuttingDown && self.lidMonitor.isClosed
     }
-    helperRequestInFlight = true
-    helper.setSleepDisabled(false) { [weak self] success, message in
-      guard let self else { return }
-      self.helperRequestInFlight = false
-      self.helperReady = false
-      self.lidSleepDisabled = !success
-      guard self.generation == currentGeneration else {
-        self.evaluate()
-        return
+    if action == .requestSleep {
+      SystemSleeper.sleepNow { [weak self] in
+        guard let self else { return false }
+        return !self.shuttingDown && self.lidMonitor.isClosed
       }
-      if !success, let message {
-        NSLog("Unable to restore system sleep: \(message)")
-      }
-      self.publish(success ? target : .helperUnavailable(self.powerMonitor.snapshot))
     }
   }
 
@@ -239,8 +253,7 @@ final class KeepAwakeController {
     let result = IOPMAssertionCreateWithName(
       kIOPMAssertPreventUserIdleSystemSleep as CFString,
       IOPMAssertionLevel(kIOPMAssertionLevelOn),
-      "LazyestFlow sleep mode prevention" as CFString,
-      &id
+      "Lazyest Flow keep awake" as CFString, &id
     )
     guard result == kIOReturnSuccess else {
       NSLog("Failed to create sleep assertion: \(result)")
@@ -262,101 +275,19 @@ final class KeepAwakeController {
     assertionActive = false
   }
 
-  private func handleLidChange(isClosed: Bool) {
-    applyLidPolicy(isClosed: isClosed)
-  }
-
-  private func applyLidPolicy(isClosed: Bool) {
-    let isKorean = KeyboardInputMode.isKorean
-    let action = LidSleepPolicy.resolve(
-      keepAwakeEnabled: config.keepAwakeEnabled,
-      inputModePolicyEnabled: config.sleepOnKoreanLidClose,
-      isKoreanInputSource: isKorean
-    )
-    NSLog(
-      "Applying lid policy: closed=\(isClosed), action=\(String(describing: action)), input=\(KeyboardInputMode.diagnosticName)"
-    )
-    lidTransitionGeneration += 1
-    let transitionGeneration = lidTransitionGeneration
-
-    guard isClosed else {
-      stopHeartbeat()
-      restoreSleepAfterLidOpen(transitionGeneration: transitionGeneration)
-      return
-    }
-
-    switch action {
-    case .followSystem:
-      stopHeartbeat()
-      restoreSleepAfterLidOpen(transitionGeneration: transitionGeneration)
-      lockAfterLidCloseIfNeeded()
-    case .preventSleep:
-      guard helperReady, helper.status == .installed else {
-        NSLog("Cannot prevent lid sleep because the power helper is unavailable")
-        return
-      }
-      helper.setSleepDisabled(true) { [weak self] success, message in
-        guard let self, self.lidTransitionGeneration == transitionGeneration else { return }
-        self.lidSleepDisabled = success
-        if success {
-          self.startHeartbeat()
-          self.lockAfterLidCloseIfNeeded()
-          NSLog("Lid sleep prevention is active")
-        } else {
-          NSLog("Unable to prevent lid sleep: \(message ?? "unknown helper error")")
-        }
-      }
-    case .requestSleep:
-      stopHeartbeat()
-      requestSleepAfterRestoringSystemSleep(transitionGeneration: transitionGeneration)
-    }
-  }
-
-  private func restoreSleepAfterLidOpen(transitionGeneration: Int) {
-    guard helper.status == .installed, helperReady || lidSleepDisabled else { return }
-    helper.setSleepDisabled(false) { [weak self] success, message in
-      guard let self, self.lidTransitionGeneration == transitionGeneration else { return }
-      self.lidSleepDisabled = !success
-      if !success {
-        NSLog(
-          "Unable to restore system sleep after lid opened: \(message ?? "unknown helper error")")
-      }
-    }
-  }
-
-  private func requestSleepAfterRestoringSystemSleep(transitionGeneration: Int) {
-    guard helper.status == .installed, helperReady else {
-      SystemSleeper.sleepNow()
-      return
-    }
-    helper.setSleepDisabled(false) { [weak self] success, message in
-      guard let self, self.lidTransitionGeneration == transitionGeneration else { return }
-      self.lidSleepDisabled = !success
-      guard success else {
-        NSLog(
-          "Unable to restore system sleep before lid sleep: \(message ?? "unknown helper error")")
-        return
-      }
-      SystemSleeper.sleepNow()
-    }
-  }
-
-  private func lockAfterLidCloseIfNeeded() {
-    if config.lockOnLidClose {
-      ScreenLocker.lockAndSleepDisplays()
-    }
-  }
-
   private func startHeartbeat() {
     guard heartbeatTimer == nil else { return }
     let timer = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
-      guard let self, self.lidSleepDisabled else { return }
-      self.helper.heartbeat { success in
-        if !success {
-          self.lidSleepDisabled = false
-          self.stopHeartbeat()
-          NSLog("Lid sleep prevention heartbeat failed")
-        }
+      guard let self, self.lidSleepDisabled, !self.helperRequestInFlight else { return }
+      let currentGeneration = self.generation
+      self.helper.heartbeat { [weak self] success in
+        guard let self, self.generation == currentGeneration, !self.shuttingDown else { return }
+        guard !success else { return }
+        self.helperReady = false
+        self.stopHeartbeat()
+        self.stopIdleSleepAssertion()
+        self.publish(.helperUnavailable(self.powerMonitor.snapshot))
+        NSLog("Sleep prevention heartbeat failed; the helper lease will restore normal sleep")
       }
     }
     RunLoop.main.add(timer, forMode: .common)
@@ -427,7 +358,12 @@ private final class PowerHelperManager {
     )
     newConnection.remoteObjectInterface = NSXPCInterface(
       with: LazyestPowerHelperProtocol.self)
-    newConnection.invalidationHandler = { [weak self] in self?.connection = nil }
+    newConnection.invalidationHandler = { [weak self, weak newConnection] in
+      DispatchQueue.main.async {
+        guard let self, self.connection === newConnection else { return }
+        self.connection = nil
+      }
+    }
     newConnection.interruptionHandler = {}
     newConnection.resume()
     connection = newConnection
@@ -507,7 +443,10 @@ enum PowerHelperMaintenance {
 
   static func uninstall() -> Int32 {
     let helper = PowerHelperManager()
-    if helper.status == .notInstalled { return 0 }
+    guard PowerHelperInstaller.hasInstalledFiles || PowerHelperInstaller.hasLegacyInstalledFiles
+    else {
+      return 0
+    }
     _ = disable(helper)
     var finished = false
     var removed = false
@@ -601,7 +540,7 @@ private final class SystemPowerSourceMonitor {
     }
   }
 
-  private func refresh() {
+  func refresh() {
     let updated = Self.readSnapshot()
     guard updated != snapshot else { return }
     snapshot = updated
@@ -610,7 +549,7 @@ private final class SystemPowerSourceMonitor {
 
   private static func readSnapshot() -> PowerSnapshot {
     guard let unmanagedInfo = IOPSCopyPowerSourcesInfo() else {
-      return PowerSnapshot(onACPower: true, batteryPercent: nil, charging: false)
+      return PowerSnapshot(onACPower: false, batteryPercent: nil, charging: false)
     }
     let info = unmanagedInfo.takeRetainedValue()
     let type = IOPSGetProvidingPowerSourceType(info).takeUnretainedValue() as String
@@ -657,7 +596,7 @@ private final class LidStateMonitor {
   private var lastState: Bool?
 
   var isClosed: Bool {
-    lastState ?? readClosedState() ?? false
+    readClosedState() ?? lastState ?? false
   }
 
   init() {
@@ -717,28 +656,17 @@ private enum KeyboardInputMode {
   static var isKorean: Bool {
     guard
       let source = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue(),
-      let property = TISGetInputSourceProperty(source, kTISPropertyInputSourceLanguages)
-    else {
-      return false
-    }
-    let languages = Unmanaged<CFArray>.fromOpaque(property).takeUnretainedValue() as? [String]
-    return languages?.contains(where: { $0.lowercased().hasPrefix("ko") }) == true
-  }
-
-  static var diagnosticName: String {
-    guard
-      let source = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue(),
       let property = TISGetInputSourceProperty(source, kTISPropertyInputSourceID)
-    else {
-      return "unknown"
-    }
-    return Unmanaged<CFString>.fromOpaque(property).takeUnretainedValue() as String
+    else { return false }
+    let identifier = Unmanaged<CFString>.fromOpaque(property).takeUnretainedValue() as String
+    return LidInputSourcePolicy.isKnownKorean(sourceIdentifier: identifier)
   }
 }
 
 private enum SystemSleeper {
-  static func sleepNow() {
+  static func sleepNow(stillClosed: @escaping () -> Bool) {
     DispatchQueue.global(qos: .userInitiated).async {
+      guard DispatchQueue.main.sync(execute: stillClosed) else { return }
       guard run("/usr/bin/pmset", ["sleepnow"]) else {
         NSLog("Unable to request system sleep after lid close")
         return
@@ -768,15 +696,19 @@ private enum ScreenLocker {
   private static let legacyCGSessionPath =
     "/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession"
 
-  static func lockAndSleepDisplays() {
+  static func sleepDisplays(lockSession: Bool, stillClosed: @escaping () -> Bool) {
     DispatchQueue.global(qos: .userInitiated).async {
-      guard requestSessionLock() else {
-        NSLog("Unable to request an immediate session lock")
-        return
+      guard DispatchQueue.main.sync(execute: stillClosed) else { return }
+      if lockSession {
+        if !requestSessionLock() {
+          NSLog("Unable to request session lock; Accessibility permission may be required")
+        }
+        Thread.sleep(forTimeInterval: 0.3)
       }
-      Thread.sleep(forTimeInterval: 0.3)
+      guard DispatchQueue.main.sync(execute: stillClosed) else { return }
+      // Display sleep is independent of whether session locking is enabled or succeeds.
       if !run("/usr/bin/pmset", ["displaysleepnow"]) {
-        NSLog("Unable to turn off displays after requesting a session lock")
+        NSLog("Unable to turn off displays after lid close")
       }
     }
   }

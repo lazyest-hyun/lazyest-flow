@@ -47,6 +47,7 @@ final class EventTapHost {
     guard let eventTap else { return false }
     runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0)
     guard let runLoopSource else {
+      CFMachPortInvalidate(eventTap)
       self.eventTap = nil
       return false
     }

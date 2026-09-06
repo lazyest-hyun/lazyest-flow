@@ -1,4 +1,36 @@
+import AppKit
 import Darwin
+import Foundation
+
+if let previewIndex = CommandLine.arguments.firstIndex(of: "--render-previews") {
+  guard CommandLine.arguments.indices.contains(previewIndex + 1) else {
+    fputs("Usage: LazyestFlow --render-previews OUTPUT_DIRECTORY [ko|en]\n", stderr)
+    exit(2)
+  }
+  let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  do {
+    try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    flowPreviewLanguage = CommandLine.arguments.last == "en" ? .english : .korean
+    _ = NSApplication.shared
+    let preview = SettingsWindowController(
+      config: Config(
+        hotkeyPath: temporary.appendingPathComponent("hotkeys.conf").path,
+        bootstrapPath: temporary.appendingPathComponent("bootstrap.conf").path),
+      previewMode: true,
+      dockPinStatusProvider: { .off },
+      screenshotStatusProvider: { true },
+      keepAwakeStatusProvider: {
+        .active(PowerSnapshot(onACPower: true, batteryPercent: nil, charging: false))
+      })
+    try preview.renderPreviews(to: URL(fileURLWithPath: CommandLine.arguments[previewIndex + 1]))
+    print("LAZYEST_FLOW_PREVIEWS_OK")
+    exit(0)
+  } catch {
+    fputs("Preview rendering failed: \(error.localizedDescription)\n", stderr)
+    exit(1)
+  }
+}
 
 if CommandLine.arguments.contains("--register-power-helper") {
   exit(PowerHelperMaintenance.register())
@@ -51,6 +83,26 @@ if let unsupported = CommandLine.arguments.dropFirst().first(where: {
 }) {
   fputs("Unknown option: \(unsupported)\n", stderr)
   exit(2)
+}
+
+// Keep one runtime instance even when a user starts a second local build.
+// Maintenance and offscreen preview commands above deliberately do not take this lock.
+let runtimeLockURL = FileManager.default.temporaryDirectory
+  .appendingPathComponent("com.lazyest.flow.\(getuid()).runtime.lock")
+let runtimeLock = open(runtimeLockURL.path, O_CREAT | O_RDWR | O_NOFOLLOW, S_IRUSR | S_IWUSR)
+guard runtimeLock >= 0 else {
+  fputs("Unable to create the Flow runtime lock.\n", stderr)
+  exit(1)
+}
+guard flock(runtimeLock, LOCK_EX | LOCK_NB) == 0 else {
+  guard errno == EWOULDBLOCK else {
+    fputs("Unable to acquire the Flow runtime lock.\n", stderr)
+    exit(1)
+  }
+  NSRunningApplication.runningApplications(withBundleIdentifier: "com.lazyest.flow")
+    .first(where: { $0.processIdentifier != getpid() })?
+    .activate(options: [.activateIgnoringOtherApps])
+  exit(0)
 }
 
 let hotkeyPath = applicationSupportPath("hotkeys.conf")

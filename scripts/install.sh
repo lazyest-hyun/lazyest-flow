@@ -37,7 +37,7 @@ if [ "$installed_app_path" = "$LEGACY_APP_PATH" ]; then
   installed_executable_name="$LEGACY_APP_NAME"
 fi
 installed_executable="$installed_app_path/Contents/MacOS/$installed_executable_name"
-if [ -z "${MAC_BOOTSTRAP_AGENT_CODESIGN_IDENTITY:-}" ] && [ -d "$installed_app_path" ]; then
+if [ -z "${LAZYEST_CODESIGN_IDENTITY:-${MAC_BOOTSTRAP_AGENT_CODESIGN_IDENTITY:-}}" ] && [ -d "$installed_app_path" ]; then
   installed_codesign_identity="$(
     codesign -dv --verbose=4 "$installed_app_path" 2>&1 \
       | sed -n 's/^Authority=//p' \
@@ -46,12 +46,14 @@ if [ -z "${MAC_BOOTSTRAP_AGENT_CODESIGN_IDENTITY:-}" ] && [ -d "$installed_app_p
   if [[ "$installed_codesign_identity" == Developer\ ID\ Application:* ]] \
     && security find-identity -v -p codesigning 2>/dev/null \
       | grep -F "\"$installed_codesign_identity\"" >/dev/null; then
-    export MAC_BOOTSTRAP_AGENT_CODESIGN_IDENTITY="$installed_codesign_identity"
+    export LAZYEST_CODESIGN_IDENTITY="$installed_codesign_identity"
     echo "  preserve codesign: $installed_codesign_identity"
   fi
 fi
 installed_login_maintenance_version="$(
-  /usr/libexec/PlistBuddy -c 'Print :MacBootstrapLoginLaunchMaintenanceVersion' \
+  /usr/libexec/PlistBuddy -c 'Print :LazyestLoginLaunchMaintenanceVersion' \
+    "$installed_app_path/Contents/Info.plist" 2>/dev/null || \
+    /usr/libexec/PlistBuddy -c 'Print :MacBootstrapLoginLaunchMaintenanceVersion' \
     "$installed_app_path/Contents/Info.plist" 2>/dev/null || true
 )"
 if [[ "$installed_login_maintenance_version" =~ ^[12]$ ]] \
@@ -73,8 +75,13 @@ for _ in {1..20}; do
   fi
   sleep 0.1
 done
+if pgrep -x "$APP_EXECUTABLE" >/dev/null 2>&1 || pgrep -x "$LEGACY_APP_NAME" >/dev/null 2>&1; then
+  echo "  blocked: Flow is still running; existing app was preserved" >&2
+  exit 1
+fi
 refresh_power_helper=0
-if [ -e "$INSTALLED_HELPER_PATH" ] || [ -e "$INSTALLED_HELPER_PLIST" ]; then
+if [ -e "$INSTALLED_HELPER_PATH" ] || [ -e "$INSTALLED_HELPER_PLIST" ] \
+  || [ -e "/Library/LaunchDaemons/$LEGACY_HELPER_LABEL.plist" ]; then
   refresh_power_helper=1
 fi
 if [ -f "$installed_app_path/Contents/Library/LaunchDaemons/$HELPER_PLIST" ] \
@@ -94,7 +101,15 @@ if ((refresh_power_helper)) && [ -x "$installed_executable" ]; then
     exit 1
   fi
 fi
+# Unregister the old bundle identity before replacing its executable.
+installed_bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$installed_app_path/Contents/Info.plist" 2>/dev/null || true)"
+if ((login_start_was_enabled)) && [ "$installed_bundle_id" != "$BUNDLE_ID" ]; then
+  "$installed_executable" --disable-login-launch
+fi
 package_app "$APP_PATH"
+if ((refresh_power_helper)); then
+  "$APP_PATH/Contents/MacOS/$APP_EXECUTABLE" --register-power-helper
+fi
 if [ -d "$LEGACY_APP_PATH" ]; then
   rm -rf "$LEGACY_APP_PATH"
 fi

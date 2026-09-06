@@ -4,16 +4,28 @@ set -euo pipefail
 MODE="${1:-run}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="LazyestFlow"
-APP_BUNDLE="$ROOT_DIR/dist/$APP_NAME.app"
+APP_BUNDLE="$ROOT_DIR/dist/Lazyest Flow.app"
 APP_BINARY="$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 
-pkill -x "$APP_NAME" >/dev/null 2>&1 || true
+case "$MODE" in
+  run|--debug|debug|--logs|logs|--telemetry|telemetry|--verify|verify) ;;
+  *) echo "Usage: $0 [run|--debug|--logs|--telemetry|--verify]" >&2; exit 2 ;;
+esac
 "$ROOT_DIR/bootstrap.sh" build
 mkdir -p "$ROOT_DIR/dist"
 "$ROOT_DIR/scripts/package-app.sh" "$APP_BUNDLE"
 
 open_app() {
-  /usr/bin/open -n "$APP_BUNDLE"
+  pkill -x "$APP_NAME" >/dev/null 2>&1 || true
+  for _ in {1..30}; do
+    pgrep -x "$APP_NAME" >/dev/null 2>&1 || break
+    sleep 0.1
+  done
+  if pgrep -x "$APP_NAME" >/dev/null 2>&1; then
+    echo "Flow is still running; close it before starting this build." >&2
+    return 1
+  fi
+  /usr/bin/open "$APP_BUNDLE"
 }
 
 case "$MODE" in
@@ -29,7 +41,7 @@ case "$MODE" in
     ;;
   --telemetry|telemetry)
     open_app
-    /usr/bin/log stream --info --style compact --predicate 'subsystem == "com.estaid.mac-bootstrap-agent"'
+    /usr/bin/log stream --info --style compact --predicate 'subsystem BEGINSWITH "com.lazyest.flow"'
     ;;
   --verify|verify)
     open_app

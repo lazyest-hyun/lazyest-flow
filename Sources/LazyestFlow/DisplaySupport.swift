@@ -153,33 +153,18 @@ func agentMenuBarIcon() -> NSImage {
   let image = NSImage(size: NSSize(width: 18, height: 18))
   image.lockFocus()
   NSColor.black.setStroke()
-  NSColor.black.setFill()
-
-  let stroke = NSBezierPath()
-  stroke.lineWidth = 1.8
-  stroke.lineCapStyle = .round
-  stroke.lineJoinStyle = .round
-  stroke.move(to: NSPoint(x: 9, y: 3))
-  stroke.line(to: NSPoint(x: 9, y: 15))
-  stroke.move(to: NSPoint(x: 4.5, y: 6))
-  stroke.curve(
-    to: NSPoint(x: 9, y: 3.2), controlPoint1: NSPoint(x: 4.8, y: 3.8),
-    controlPoint2: NSPoint(x: 7.1, y: 3.1))
-  stroke.curve(
-    to: NSPoint(x: 13.5, y: 6), controlPoint1: NSPoint(x: 10.9, y: 3.1),
-    controlPoint2: NSPoint(x: 13.2, y: 3.8))
-  stroke.stroke()
-
-  let top = NSBezierPath(
-    roundedRect: NSRect(x: 5.2, y: 11.2, width: 7.6, height: 3.6), xRadius: 1.8, yRadius: 1.8)
-  top.lineWidth = 1.6
-  top.stroke()
-
-  let leftDot = NSBezierPath(ovalIn: NSRect(x: 4.0, y: 7.8, width: 2.4, height: 2.4))
-  leftDot.fill()
-  let rightDot = NSBezierPath(ovalIn: NSRect(x: 11.6, y: 7.8, width: 2.4, height: 2.4))
-  rightDot.fill()
-
+  let path = NSBezierPath()
+  path.move(to: NSPoint(x: 2, y: 4))
+  path.curve(
+    to: NSPoint(x: 15.5, y: 13.5),
+    controlPoint1: NSPoint(x: 10, y: 2.5), controlPoint2: NSPoint(x: 7, y: 15))
+  path.move(to: NSPoint(x: 11.5, y: 14.5))
+  path.line(to: NSPoint(x: 15.5, y: 13.5))
+  path.line(to: NSPoint(x: 14.5, y: 9.5))
+  path.lineWidth = 1.8
+  path.lineCapStyle = .round
+  path.lineJoinStyle = .round
+  path.stroke()
   image.unlockFocus()
   image.isTemplate = true
   image.accessibilityDescription = "Lazyest Flow"

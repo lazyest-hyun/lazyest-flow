@@ -12,7 +12,9 @@ echo "  dry-run: $DRY_RUN"
 echo "  app: $APP_PATH"
 
 login_maintenance_version="$(
-  /usr/libexec/PlistBuddy -c 'Print :MacBootstrapLoginLaunchMaintenanceVersion' \
+  /usr/libexec/PlistBuddy -c 'Print :LazyestLoginLaunchMaintenanceVersion' \
+    "$APP_PATH/Contents/Info.plist" 2>/dev/null || \
+    /usr/libexec/PlistBuddy -c 'Print :MacBootstrapLoginLaunchMaintenanceVersion' \
     "$APP_PATH/Contents/Info.plist" 2>/dev/null || true
 )"
 legacy_login_registration_present=0

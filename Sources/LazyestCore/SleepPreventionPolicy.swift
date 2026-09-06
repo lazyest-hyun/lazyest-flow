@@ -20,7 +20,7 @@ public enum SleepPreventionPolicy {
     guard enabled else { return .disabled }
     guard !thermalSafetyRequired else { return .thermalSafety }
     guard onACPower || includeBattery else { return .waitingForPower }
-    if !onACPower, let batteryPercent, batteryPercent <= lowBatteryCutoff {
+    if !onACPower, (batteryPercent ?? 0) <= lowBatteryCutoff {
       return .lowBattery
     }
     return .active
@@ -44,5 +44,13 @@ public enum LidSleepPolicy {
       return .requestSleep
     }
     return .preventSleep
+  }
+}
+
+public enum LidInputSourcePolicy {
+  /// Only Apple input sources expose a dependable mode through Text Input Services.
+  /// Third-party IMEs may report Korean even while their internal mode is English.
+  public static func isKnownKorean(sourceIdentifier: String?) -> Bool {
+    sourceIdentifier?.hasPrefix("com.apple.inputmethod.Korean.") == true
   }
 }

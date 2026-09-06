@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import IOKit.ps
 import LazyestCore
 import OSLog
 import Security
@@ -31,19 +32,25 @@ final class PowerHelperListenerDelegate: NSObject, NSXPCListenerDelegate {
 enum PowerHelperConnectionValidator {
   static var runtimeConfigurationIsValid: Bool {
     guard
+      geteuid() == 0,
+      installationConfigurationIsRootOwned,
       currentExecutablePath(processIdentifier: getpid())
         == LazyestPowerHelper.installedExecutablePath,
       expectedApplicationPath == LazyestPowerHelper.installedAppPath,
       expectedUserID != nil,
+      expectedClientCDHash != nil,
       let applicationCode = staticCode(at: LazyestPowerHelper.installedAppPath),
       SecStaticCodeCheckValidity(applicationCode, [], nil) == errSecSuccess,
       signingIdentifier(for: applicationCode)
         == LazyestPowerHelper.agentBundleIdentifier,
-      let applicationTeamIdentifier = teamIdentifier(for: applicationCode),
+      codeHash(for: applicationCode) == expectedClientCDHash,
       let helperCode = staticCode(at: LazyestPowerHelper.installedExecutablePath),
       SecStaticCodeCheckValidity(helperCode, [], nil) == errSecSuccess,
       signingIdentifier(for: helperCode) == LazyestPowerHelper.label,
-      teamIdentifier(for: helperCode) == applicationTeamIdentifier
+      teamIdentifier(for: helperCode) == teamIdentifier(for: applicationCode),
+      let embeddedHelperCode = staticCode(at: LazyestPowerHelper.embeddedHelperPath),
+      SecStaticCodeCheckValidity(embeddedHelperCode, [], nil) == errSecSuccess,
+      codeHash(for: helperCode) == codeHash(for: embeddedHelperCode)
     else {
       return false
     }
@@ -89,13 +96,39 @@ enum PowerHelperConnectionValidator {
     }
     guard
       let applicationCode = staticCode(at: LazyestPowerHelper.installedAppPath),
-      let applicationTeamIdentifier = teamIdentifier(for: applicationCode),
-      teamIdentifier(for: guestStaticCode) == applicationTeamIdentifier
+      codeHash(for: guestStaticCode) == expectedClientCDHash,
+      teamIdentifier(for: guestStaticCode) == teamIdentifier(for: applicationCode)
     else {
       powerHelperLogger.error("Client rejected: signing team mismatch")
       return false
     }
     return true
+  }
+
+  private static var installationConfigurationIsRootOwned: Bool {
+    guard
+      let values = try? FileManager.default.attributesOfItem(
+        atPath: LazyestPowerHelper.installedPlistPath
+      )
+    else { return false }
+    return values[.type] as? FileAttributeType == .typeRegular
+      && (values[.ownerAccountID] as? NSNumber)?.intValue == 0
+      && (values[.groupOwnerAccountID] as? NSNumber)?.intValue == 0
+      && (values[.posixPermissions] as? NSNumber)?.intValue == 0o644
+  }
+
+  private static var expectedClientCDHash: String? {
+    guard
+      let hash = ProcessInfo.processInfo.environment[LazyestPowerHelper.clientCDHashEnvironment],
+      hash.count == 40, hash.allSatisfy({ $0.isHexDigit })
+    else { return nil }
+    return hash.lowercased()
+  }
+
+  private static func codeHash(for code: SecStaticCode) -> String? {
+    guard let hash = signingInformation(for: code)?[kSecCodeInfoUnique] as? Data, !hash.isEmpty
+    else { return nil }
+    return hash.map { String(format: "%02x", $0) }.joined()
   }
 
   private static var expectedApplicationPath: String? {
@@ -171,10 +204,10 @@ enum PowerHelperConnectionValidator {
 }
 
 final class PowerHelperService: NSObject, LazyestPowerHelperProtocol {
-  private let queue = DispatchQueue(label: "com.estaid.mac-bootstrap-agent.power-helper.state")
+  private let queue = DispatchQueue(label: "\(LazyestPowerHelper.label).state")
   private let markerURL = URL(
     fileURLWithPath: LazyestPowerHelper.ownedSleepMarkerPath)
-  private var lastHeartbeat = Date.distantPast
+  private var lastHeartbeatUptime: TimeInterval = 0
   private var keepAwake = false
   private var ownsSleepDisabled = false
   private var watchdogTimer: DispatchSourceTimer?
@@ -192,7 +225,9 @@ final class PowerHelperService: NSObject, LazyestPowerHelperProtocol {
     withReply reply: @escaping (Bool, String?) -> Void
   ) {
     queue.async {
-      let result = enabled ? self.enableSleepDisabled() : self.disableOwnedSleepDisabled()
+      let result = self.withSleepSettingLock {
+        enabled ? self.enableSleepDisabled() : self.disableOwnedSleepDisabled()
+      }
       if result.ok {
         powerHelperLogger.info("Set sleep disabled: \(enabled, privacy: .public)")
       } else {
@@ -212,12 +247,19 @@ final class PowerHelperService: NSObject, LazyestPowerHelperProtocol {
 
   func heartbeat(withReply reply: @escaping (Bool) -> Void) {
     queue.async {
-      guard self.keepAwake else {
-        reply(false)
-        return
+      let result = self.withSleepSettingLock {
+        guard self.keepAwake, Self.powerSafetyAllowsKeepAwake else {
+          _ = self.disableOwnedSleepDisabled()
+          return (false, "Sleep prevention lease or power safety expired.")
+        }
+        if !Self.isSleepDisabled() {
+          let enableResult = self.enableSleepDisabled()
+          guard enableResult.ok else { return enableResult }
+        }
+        self.lastHeartbeatUptime = ProcessInfo.processInfo.systemUptime
+        return (true, nil)
       }
-      self.lastHeartbeat = Date()
-      reply(true)
+      reply(result.ok)
     }
   }
 
@@ -226,32 +268,47 @@ final class PowerHelperService: NSObject, LazyestPowerHelperProtocol {
   }
 
   private func enableSleepDisabled() -> (ok: Bool, error: String?) {
-    if keepAwake {
-      lastHeartbeat = Date()
+    guard Self.powerSafetyAllowsKeepAwake else {
+      _ = disableOwnedSleepDisabled()
+      return (false, "Sleep prevention paused for battery or temperature safety.")
+    }
+    guard let sleepDisabled = Self.readSleepDisabled() else {
+      return (false, "Unable to read the current system sleep setting.")
+    }
+    if keepAwake && sleepDisabled {
+      lastHeartbeatUptime = ProcessInfo.processInfo.systemUptime
       return (true, nil)
     }
 
-    if Self.isSleepDisabled() {
+    if sleepDisabled {
+      guard FileManager.default.fileExists(atPath: markerURL.path) else {
+        return (false, "Another app controls system sleep. Use one lid controller at a time.")
+      }
       keepAwake = true
-      ownsSleepDisabled = FileManager.default.fileExists(atPath: markerURL.path)
-      lastHeartbeat = Date()
+      ownsSleepDisabled = true
+      lastHeartbeatUptime = ProcessInfo.processInfo.systemUptime
       return (true, nil)
     }
 
-    let result = Self.runPmset(disableSleep: true)
-    guard result.ok else { return result }
+    // Write ownership before changing power state so a crash between these steps
+    // still leaves enough information for the watchdog or next launch to restore.
     do {
       try Data().write(to: markerURL, options: .atomic)
       try FileManager.default.setAttributes(
         [.posixPermissions: 0o600], ofItemAtPath: markerURL.path)
     } catch {
-      _ = Self.runPmset(disableSleep: false)
       return (false, "Unable to create the sleep safety marker: \(error.localizedDescription)")
+    }
+    ownsSleepDisabled = true
+    let result = Self.runPmset(disableSleep: true)
+    guard result.ok else {
+      _ = disableOwnedSleepDisabled()
+      return result
     }
 
     ownsSleepDisabled = true
     keepAwake = true
-    lastHeartbeat = Date()
+    lastHeartbeatUptime = ProcessInfo.processInfo.systemUptime
     return (true, nil)
   }
 
@@ -265,41 +322,76 @@ final class PowerHelperService: NSObject, LazyestPowerHelperProtocol {
     }
     ownsSleepDisabled = false
     keepAwake = false
-    lastHeartbeat = .distantPast
+    lastHeartbeatUptime = 0
     return (true, nil)
   }
 
   private func restoreStaleOwnedState() {
-    guard FileManager.default.fileExists(atPath: markerURL.path) else { return }
-    let result = Self.runPmset(disableSleep: false)
-    if result.ok {
-      try? FileManager.default.removeItem(at: markerURL)
+    _ = withSleepSettingLock { disableOwnedSleepDisabled() }
+  }
+
+  private func withSleepSettingLock(
+    _ operation: () -> (ok: Bool, error: String?)
+  ) -> (ok: Bool, error: String?) {
+    do { return try LazyestSystemSleepLock.withLock(operation) } catch {
+      return (false, error.localizedDescription)
     }
-    ownsSleepDisabled = false
-    keepAwake = false
   }
 
   private func startWatchdog() {
     let timer = DispatchSource.makeTimerSource(queue: queue)
     timer.schedule(deadline: .now() + 15, repeating: 15)
     timer.setEventHandler { [weak self] in
-      guard let self, self.keepAwake else { return }
-      if Date().timeIntervalSince(self.lastHeartbeat) > LazyestPowerHelper.watchdogTimeout {
-        _ = self.disableOwnedSleepDisabled()
+      guard let self else { return }
+      let hasOwnedMarker = FileManager.default.fileExists(atPath: self.markerURL.path)
+      guard self.keepAwake || self.ownsSleepDisabled || hasOwnedMarker else { return }
+      let leaseExpired =
+        ProcessInfo.processInfo.systemUptime - self.lastHeartbeatUptime
+        > LazyestPowerHelper.watchdogTimeout
+      if !self.keepAwake || leaseExpired || !Self.powerSafetyAllowsKeepAwake {
+        _ = self.withSleepSettingLock { self.disableOwnedSleepDisabled() }
       }
     }
     timer.resume()
     watchdogTimer = timer
   }
 
-  private static func isSleepDisabled() -> Bool {
-    guard let output = capture("/usr/bin/pmset", ["-g"]) else { return false }
-    return output.split(separator: "\n").contains { line in
-      let fields = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
-      return fields.count >= 2
-        && fields[0].lowercased() == "sleepdisabled"
-        && fields[1] == "1"
+  private static var powerSafetyAllowsKeepAwake: Bool {
+    let thermal = ProcessInfo.processInfo.thermalState
+    guard thermal != .serious && thermal != .critical else { return false }
+    guard let unmanagedInfo = IOPSCopyPowerSourcesInfo() else { return false }
+    let info = unmanagedInfo.takeRetainedValue()
+    let source = IOPSGetProvidingPowerSourceType(info).takeUnretainedValue() as String
+    if source == kIOPSACPowerValue as String { return true }
+    guard let unmanagedList = IOPSCopyPowerSourcesList(info) else { return false }
+    for source in unmanagedList.takeRetainedValue() as [AnyObject] {
+      guard let unmanaged = IOPSGetPowerSourceDescription(info, source),
+        let battery = unmanaged.takeUnretainedValue() as? [String: Any],
+        battery[kIOPSTypeKey as String] as? String == kIOPSInternalBatteryType as String,
+        let current = battery[kIOPSCurrentCapacityKey as String] as? Int,
+        let maximum = battery[kIOPSMaxCapacityKey as String] as? Int,
+        maximum > 0
+      else { continue }
+      return Double(current) / Double(maximum) * 100
+        > Double(SleepPreventionPolicy.defaultLowBatteryCutoff)
     }
+    return false
+  }
+
+  private static func isSleepDisabled() -> Bool {
+    readSleepDisabled() == true
+  }
+
+  private static func readSleepDisabled() -> Bool? {
+    guard let output = capture("/usr/bin/pmset", ["-g"]) else { return nil }
+    for line in output.split(separator: "\n") {
+      let fields = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
+      guard fields.count >= 2, fields[0].lowercased() == "sleepdisabled" else { continue }
+      if fields[1] == "1" { return true }
+      if fields[1] == "0" { return false }
+      return nil
+    }
+    return nil
   }
 
   private static func runPmset(disableSleep: Bool) -> (ok: Bool, error: String?) {
@@ -336,6 +428,7 @@ final class PowerHelperService: NSObject, LazyestPowerHelperProtocol {
     } catch {
       return nil
     }
+    guard process.terminationStatus == 0 else { return nil }
     return String(
       data: outputPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)
   }

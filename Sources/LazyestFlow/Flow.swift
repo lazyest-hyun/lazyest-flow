@@ -90,6 +90,9 @@ final class Flow: NSObject, NSApplicationDelegate {
 
   func applicationDidBecomeActive(_ notification: Notification) {
     keepAwakeController.reload()
+    if !screenshotWatcher.isActive { screenshotWatcher.reload() }
+    mouseScrollController.reload()
+    updateMenuState()
   }
 
   func applicationWillTerminate(_ notification: Notification) {
@@ -243,6 +246,7 @@ final class Flow: NSObject, NSApplicationDelegate {
         dockPinStatusProvider: { [weak self] in
           self?.dockPinController.status ?? .off
         },
+        screenshotStatusProvider: { [weak self] in self?.screenshotWatcher.isActive ?? false },
         keepAwakeStatusProvider: { [weak self] in
           self?.keepAwakeController.status
             ?? .off(PowerSnapshot(onACPower: true, batteryPercent: nil, charging: false))

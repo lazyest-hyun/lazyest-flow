@@ -7,7 +7,10 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 APP_NAME="Lazyest Flow"
 APP_EXECUTABLE="LazyestFlow"
 LEGACY_APP_NAME="MacBootstrapAgent"
-BUNDLE_ID="com.estaid.mac-bootstrap-agent"
+BUNDLE_ID="com.lazyest.flow"
+# Read-only migration identities for installations created before the rename.
+LEGACY_BUNDLE_ID="com.estaid.mac-bootstrap-agent"
+LEGACY_HELPER_LABEL="$LEGACY_BUNDLE_ID.power-helper"
 HELPER_NAME="LazyestPowerHelper"
 HELPER_LABEL="$BUNDLE_ID.power-helper"
 HELPER_PLIST="$HELPER_LABEL.plist"
@@ -17,9 +20,9 @@ APP_PATH="/Applications/$APP_NAME.app"
 CONFIG_DIR="$HOME/Library/Application Support/$APP_NAME"
 LEGACY_APP_PATH="/Applications/$LEGACY_APP_NAME.app"
 LEGACY_CONFIG_DIR="$HOME/Library/Application Support/$LEGACY_APP_NAME"
-LEGACY_LOGIN_LABEL="$BUNDLE_ID.login"
+LEGACY_LOGIN_LABEL="$LEGACY_BUNDLE_ID.login"
 LEGACY_LOGIN_PLIST="$HOME/Library/LaunchAgents/$LEGACY_LOGIN_LABEL.plist"
-EARLY_LEGACY_PLIST="$HOME/Library/LaunchAgents/$BUNDLE_ID.plist"
+EARLY_LEGACY_PLIST="$HOME/Library/LaunchAgents/$LEGACY_BUNDLE_ID.plist"
 DRY_RUN=0
 
 parse_common_flags() {
@@ -66,7 +69,7 @@ release_helper_binary() {
 }
 
 codesign_identity() {
-  printf '%s\n' "${MAC_BOOTSTRAP_AGENT_CODESIGN_IDENTITY:-MacBootstrap Local Code Signing}"
+  printf '%s\n' "${LAZYEST_CODESIGN_IDENTITY:-${MAC_BOOTSTRAP_AGENT_CODESIGN_IDENTITY:-Lazyest Local Code Signing}}"
 }
 
 codesign_identity_available() {
@@ -91,8 +94,13 @@ sign_app() {
       && codesign --force --options runtime "${timestamp[@]}" --sign "$identity" "$app"; then
       return
     fi
-    echo "  warning: stable codesign failed; using ad-hoc signing"
+    echo "  blocked: requested signing identity failed; existing app was preserved" >&2
+    return 1
   else
+    if [ -n "${LAZYEST_CODESIGN_IDENTITY:-${MAC_BOOTSTRAP_AGENT_CODESIGN_IDENTITY:-}}" ]; then
+      echo "  blocked: requested signing identity is unavailable" >&2
+      return 1
+    fi
     echo "  codesign: ad-hoc"
   fi
   codesign --force --options runtime --timestamp=none --sign - "$helper"
@@ -110,7 +118,7 @@ validate_app_path() {
   esac
 }
 
-package_app() {
+package_app() (
   local app="$1"
   local binary
   local helper_binary
@@ -125,7 +133,13 @@ package_app() {
     return
   fi
 
-  rm -rf "$app"
+  local destination="$app"
+  local staging
+  local previous=""
+  mkdir -p "$(dirname "$destination")"
+  staging="$(mktemp -d "$(dirname "$destination")/.lazyest-flow-package.XXXXXX")"
+  trap 'if [ -n "$previous" ] && [ -d "$previous" ] && [ ! -e "$destination" ]; then mv "$previous" "$destination"; fi; rm -rf "$staging"' EXIT
+  app="$staging/$APP_NAME.app"
   mkdir -p \
     "$app/Contents/MacOS" \
     "$app/Contents/Resources"
@@ -163,12 +177,19 @@ package_app() {
   <string>NSApplication</string>
   <key>LazyestPowerHelperMaintenanceVersion</key>
   <integer>2</integer>
-  <key>MacBootstrapLoginLaunchMaintenanceVersion</key>
+  <key>LazyestLoginLaunchMaintenanceVersion</key>
   <integer>2</integer>
 </dict>
 </plist>
 PLIST
   printf 'APPL????' >"$app/Contents/PkgInfo"
   plutil -lint "$app/Contents/Info.plist" >/dev/null
+  "$ROOT_DIR/scripts/prepare-release-binary.sh" "$app/Contents/MacOS/$APP_EXECUTABLE" "$app/Contents/MacOS/$HELPER_NAME"
   sign_app "$app"
-}
+  codesign --verify --deep --strict "$app"
+  if [ -e "$destination" ]; then
+    previous="$staging/previous.app"
+    mv "$destination" "$previous"
+  fi
+  mv "$app" "$destination"
+)

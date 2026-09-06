@@ -39,7 +39,6 @@ final class Config {
   private(set) var mouseScrollReverseEnabled: Bool
   private(set) var screenshotDir: String
   private(set) var screenshotClipboardWatch: Bool
-  private(set) var screenshotClipboardSaveFile: Bool
   private(set) var keepAwakeEnabled: Bool
   private(set) var keepAwakeOnBattery: Bool
   private(set) var lockOnLidClose: Bool
@@ -54,7 +53,6 @@ final class Config {
     self.mouseScrollReverseEnabled = false
     self.screenshotDir = currentMacOSScreenshotDir()
     self.screenshotClipboardWatch = false
-    self.screenshotClipboardSaveFile = false
     self.keepAwakeEnabled = false
     self.keepAwakeOnBattery = true
     self.lockOnLidClose = false
@@ -128,7 +126,6 @@ final class Config {
     mouseScrollReverseEnabled: Bool,
     screenshotDir: String,
     screenshotClipboardWatch: Bool,
-    screenshotClipboardSaveFile: Bool,
     keepAwakeEnabled: Bool,
     keepAwakeOnBattery: Bool,
     lockOnLidClose: Bool,
@@ -136,24 +133,12 @@ final class Config {
     dockPinEnabled: Bool,
     dockPinDisplayID: UInt32?
   ) throws {
-    self.appHotkeysEnabled = appHotkeysEnabled
-    self.mouseScrollReverseEnabled = mouseScrollReverseEnabled
-    self.screenshotDir = resolveScreenshotDir(screenshotDir)
-    self.screenshotClipboardWatch = screenshotClipboardWatch
-    self.screenshotClipboardSaveFile = screenshotClipboardSaveFile
-    self.keepAwakeEnabled = keepAwakeEnabled
-    self.keepAwakeOnBattery = keepAwakeOnBattery
-    self.lockOnLidClose = lockOnLidClose
-    self.sleepOnKoreanLidClose = sleepOnKoreanLidClose
-    self.dockPinEnabled = dockPinEnabled
-    self.dockPinDisplayID = dockPinDisplayID
     let encodedScreenshotDir = try encodeConfigString(screenshotDir)
     let content = """
       APP_HOTKEYS_ENABLED=\(appHotkeysEnabled ? "1" : "0")
       MOUSE_SCROLL_REVERSE_ENABLED=\(mouseScrollReverseEnabled ? "1" : "0")
       SCREENSHOT_DIR=\(encodedScreenshotDir)
       SCREENSHOT_CLIPBOARD_WATCH=\(screenshotClipboardWatch ? "1" : "0")
-      SCREENSHOT_CLIPBOARD_SAVE_FILE=\(screenshotClipboardSaveFile ? "1" : "0")
       KEEP_AWAKE_ENABLED=\(keepAwakeEnabled ? "1" : "0")
       KEEP_AWAKE_ON_BATTERY=\(keepAwakeOnBattery ? "1" : "0")
       LOCK_ON_LID_CLOSE=\(lockOnLidClose ? "1" : "0")
@@ -162,6 +147,16 @@ final class Config {
       DOCK_ANCHOR_DISPLAY_ID=\(dockPinDisplayID.map(String.init) ?? "auto")
       """
     try content.write(toFile: bootstrapPath, atomically: true, encoding: .utf8)
+    self.appHotkeysEnabled = appHotkeysEnabled
+    self.mouseScrollReverseEnabled = mouseScrollReverseEnabled
+    self.screenshotDir = resolveScreenshotDir(screenshotDir)
+    self.screenshotClipboardWatch = screenshotClipboardWatch
+    self.keepAwakeEnabled = keepAwakeEnabled
+    self.keepAwakeOnBattery = keepAwakeOnBattery
+    self.lockOnLidClose = lockOnLidClose
+    self.sleepOnKoreanLidClose = sleepOnKoreanLidClose
+    self.dockPinEnabled = dockPinEnabled
+    self.dockPinDisplayID = dockPinDisplayID
   }
 
   func setKeepAwakeEnabled(_ enabled: Bool) throws {
@@ -202,7 +197,6 @@ final class Config {
       mouseScrollReverseEnabled: mouseScrollReverseEnabled,
       screenshotDir: screenshotDir,
       screenshotClipboardWatch: screenshotClipboardWatch ?? self.screenshotClipboardWatch,
-      screenshotClipboardSaveFile: screenshotClipboardSaveFile,
       keepAwakeEnabled: keepAwakeEnabled ?? self.keepAwakeEnabled,
       keepAwakeOnBattery: keepAwakeOnBattery ?? self.keepAwakeOnBattery,
       lockOnLidClose: lockOnLidClose ?? self.lockOnLidClose,
@@ -217,7 +211,6 @@ final class Config {
     mouseScrollReverseEnabled = false
     screenshotDir = currentMacOSScreenshotDir()
     screenshotClipboardWatch = false
-    screenshotClipboardSaveFile = false
     keepAwakeEnabled = false
     keepAwakeOnBattery = true
     lockOnLidClose = false
@@ -255,8 +248,6 @@ final class Config {
         screenshotDir = resolveScreenshotDir(value)
       } else if line.hasPrefix("SCREENSHOT_CLIPBOARD_WATCH="), let value = shellValue(line) {
         screenshotClipboardWatch = value == "1" || value.lowercased() == "true"
-      } else if line.hasPrefix("SCREENSHOT_CLIPBOARD_SAVE_FILE="), let value = shellValue(line) {
-        screenshotClipboardSaveFile = value == "1" || value.lowercased() == "true"
       } else if line.hasPrefix("KEEP_AWAKE_ENABLED="), let value = shellValue(line) {
         keepAwakeEnabled = value == "1" || value.lowercased() == "true"
       } else if line.hasPrefix("KEEP_AWAKE_ON_BATTERY="), let value = shellValue(line) {

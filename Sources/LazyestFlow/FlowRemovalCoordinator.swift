@@ -41,7 +41,8 @@ enum FlowRemovalCoordinator {
       }
     }
 
-    guard PowerHelperInstaller.isInstalled else {
+    guard PowerHelperInstaller.hasInstalledFiles || PowerHelperInstaller.hasLegacyInstalledFiles
+    else {
       finish()
       return
     }

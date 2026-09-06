@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.1
+
+- Refined settings layout, accessible help, and consistent Lazyest branding.
+- Fixed screenshot Control-key handling and actual runtime status.
+- Preserved individual app hotkey choices and existing keyboard mappings.
+- Improved input-device discovery and trackpad scroll isolation.
+- Hardened local-build helper authorization, closed-lid display handling, and power recovery.
+- Added isolated UI previews and documented source-build and upgrade requirements.
+
+
 ## 1.2.0 - 2026-07-29
 
 - Swapped the standard screenshot shortcuts with their Control variants so Command-Shift-3/4 copies through the native macOS clipboard capture, while Control-Command-Shift-3/4 keeps the native file-save and floating-preview behavior.
@@ -23,7 +33,7 @@
 ## 0.5.0 - 2026-07-17
 
 - Rebranded the menu bar app, Swift package, executables, and source modules as Lazyest Flow.
-- Migrated the legacy MacBootstrapAgent app and Application Support directory during installation.
+- Migrated the legacy app and Application Support directory during installation.
 - Preserved the bundle identifier, helper labels, signing identity fallback, and login-item maintenance keys so existing permissions and runtime settings continue to work.
 
 ## 0.4.13 - 2026-07-15

@@ -27,9 +27,59 @@ enum PowerHelperInstaller {
     }
   }
 
-  static var isInstalled: Bool {
+  static var hasInstalledFiles: Bool {
     validRootOwnedFile(path: LazyestPowerHelper.installedExecutablePath, mode: 0o755)
       && validRootOwnedFile(path: LazyestPowerHelper.installedPlistPath, mode: 0o644)
+  }
+
+  static var isInstalled: Bool {
+    guard hasInstalledFiles,
+      let data = FileManager.default.contents(atPath: LazyestPowerHelper.installedPlistPath),
+      let values = try? PropertyListSerialization.propertyList(from: data, format: nil)
+        as? [String: Any],
+      let environment = values["EnvironmentVariables"] as? [String: String],
+      let expectedHash = environment[LazyestPowerHelper.clientCDHashEnvironment],
+      let currentHash = try? codeHash(at: LazyestPowerHelper.installedAppPath),
+      expectedHash == currentHash,
+      environment[LazyestPowerHelper.clientAppPathEnvironment]
+        == LazyestPowerHelper.installedAppPath
+    else { return false }
+    return true
+  }
+
+  static var hasLegacyInstalledFiles: Bool {
+    FileManager.default.fileExists(atPath: "/Library/LaunchDaemons/\(legacyHelperLabel).plist")
+  }
+
+  private static var legacyHelperLabel: String {
+    "\(LegacyFlowIdentity.bundleIdentifier).power-helper"
+  }
+
+  private static func removeLegacyHelper() throws {
+    // Only migration keeps the previous identifier. Restore its owned override
+    // before unloading it so an upgrade cannot strand the Mac in disablesleep.
+    let marker = "/var/db/\(legacyHelperLabel).owns-sleep-disabled"
+    if FileManager.default.fileExists(atPath: marker) {
+      guard validRootOwnedFile(path: marker, mode: 0o600) else {
+        throw InstallerError.invalidApplication("Invalid legacy sleep ownership marker.")
+      }
+      try runChecked("/usr/bin/pmset", ["-a", "disablesleep", "0"])
+      try FileManager.default.removeItem(atPath: marker)
+    }
+    let serviceTarget = "system/\(legacyHelperLabel)"
+    if run("/bin/launchctl", ["print", serviceTarget]).status == 0 {
+      try runChecked("/bin/launchctl", ["bootout", serviceTarget])
+    }
+    for (path, mode) in [
+      ("/Library/PrivilegedHelperTools/\(legacyHelperLabel)", 0o755),
+      ("/Library/LaunchDaemons/\(legacyHelperLabel).plist", 0o644),
+    ] {
+      guard FileManager.default.fileExists(atPath: path) else { continue }
+      guard validRootOwnedFile(path: path, mode: mode) else {
+        throw InstallerError.invalidApplication("Invalid legacy helper installation.")
+      }
+      try FileManager.default.removeItem(atPath: path)
+    }
   }
 
   static func requestInstall(completion: @escaping (Bool, String?) -> Void) {
@@ -48,8 +98,11 @@ enum PowerHelperInstaller {
       let clientCDHash = try codeHash(at: LazyestPowerHelper.installedAppPath)
       let clientUserID = try consoleUserID()
 
-      try restoreOwnedSleepState()
-      try bootOutLoadedHelper()
+      try LazyestSystemSleepLock.withLock {
+        try removeLegacyHelper()
+        try restoreOwnedSleepState()
+        try bootOutLoadedHelper()
+      }
 
       let fileManager = FileManager.default
       try fileManager.createDirectory(
@@ -81,8 +134,11 @@ enum PowerHelperInstaller {
   static func removeAsRoot() -> Int32 {
     do {
       try requireRootAndInstalledApplication()
-      try restoreOwnedSleepState()
-      try bootOutLoadedHelper()
+      try LazyestSystemSleepLock.withLock {
+        try removeLegacyHelper()
+        try restoreOwnedSleepState()
+        try bootOutLoadedHelper()
+      }
       let fileManager = FileManager.default
       try removeIfPresent(
         path: LazyestPowerHelper.installedExecutablePath, fileManager: fileManager)
