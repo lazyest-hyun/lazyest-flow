@@ -270,7 +270,6 @@ final class Flow: NSObject, NSApplicationDelegate {
       settingsWindowController = controller
     }
     settingsWindowController?.showWindow(nil)
-    settingsWindowController?.window?.center()
     settingsWindowController?.window?.makeKeyAndOrderFront(nil)
     settingsWindowController?.window?.orderFrontRegardless()
     NSApplication.shared.activate(ignoringOtherApps: true)

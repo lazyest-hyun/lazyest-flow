@@ -23,7 +23,7 @@ final class DeviceRoleMenuButton: NSPopUpButton {
     toolTip = flowText("devices.role.change")
     setAccessibilityLabel(flowText("devices.role.change"))
     widthAnchor.constraint(equalToConstant: 38).isActive = true
-    heightAnchor.constraint(equalToConstant: 30).isActive = true
+    heightAnchor.constraint(equalToConstant: 32).isActive = true
 
     let trigger = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     trigger.image = NSImage(
@@ -187,17 +187,17 @@ final class MouseDeviceRowView: AdaptiveCardStackView {
   }
 
   private func buildUI() {
-    orientation = .horizontal
-    alignment = .centerY
-    spacing = 10
-    edgeInsets = NSEdgeInsets(top: 7, left: 10, bottom: 7, right: 10)
+    orientation = .vertical
+    alignment = .leading
+    spacing = 8
+    edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
+
     let icon = NSImageView(
       image: NSImage(systemSymbolName: "computermouse", accessibilityDescription: device.name)
         ?? NSImage())
     icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 17, weight: .regular)
     icon.contentTintColor = .secondaryLabelColor
-    icon.widthAnchor.constraint(equalToConstant: 26).isActive = true
-    addArrangedSubview(icon)
+    icon.widthAnchor.constraint(equalToConstant: 24).isActive = true
 
     let labels = NSStackView()
     labels.orientation = .vertical
@@ -211,18 +211,27 @@ final class MouseDeviceRowView: AdaptiveCardStackView {
     let detailParts = [
       device.manufacturer,
       device.transport,
-      String(format: "VID %04X · PID %04X", device.vendorID, device.productID),
+      String(format: "VID %04X / PID %04X", device.vendorID, device.productID),
     ].filter { !$0.isEmpty }
     name.toolTip = ([device.name] + detailParts).joined(separator: "\n")
-    let detail = NSTextField(labelWithString: device.transport)
-    detail.textColor = .secondaryLabelColor
-    detail.font = NSFont.systemFont(ofSize: 11)
-    detail.lineBreakMode = .byTruncatingTail
     labels.addArrangedSubview(name)
-    labels.addArrangedSubview(detail)
+    if !device.transport.isEmpty {
+      let detail = NSTextField(labelWithString: device.transport)
+      detail.textColor = .secondaryLabelColor
+      detail.font = NSFont.systemFont(ofSize: 11)
+      detail.lineBreakMode = .byTruncatingTail
+      labels.addArrangedSubview(detail)
+    }
     labels.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-    addArrangedSubview(labels)
-    addArrangedSubview(NSView())
+
+    let roleButton = DeviceRoleMenuButton(device: device, previewMode: preferences == nil)
+    roleButton.onResult = { [weak self] result in self?.onResult?(result) }
+    let header = NSStackView(views: [icon, labels, NSView(), roleButton])
+    header.orientation = .horizontal
+    header.alignment = .centerY
+    header.spacing = 8
+    addArrangedSubview(header)
+    header.widthAnchor.constraint(equalTo: widthAnchor, constant: -24).isActive = true
 
     for mode in MouseDeviceMode.allCases {
       modePopup.addItem(withTitle: mode.title)
@@ -236,14 +245,22 @@ final class MouseDeviceRowView: AdaptiveCardStackView {
     }
     modePopup.target = self
     modePopup.action = #selector(changeMouseMode)
-    modePopup.widthAnchor.constraint(equalToConstant: 190).isActive = true
-    modePopup.setAccessibilityLabel(device.name)
+    modePopup.controlSize = .regular
+    modePopup.font = NSFont.systemFont(ofSize: 13)
+    modePopup.widthAnchor.constraint(equalToConstant: 240).isActive = true
+    modePopup.heightAnchor.constraint(equalToConstant: 32).isActive = true
+    modePopup.setAccessibilityLabel("\(device.name) \(flowText("devices.mouse.direction"))")
     modePopup.isEnabled = preferences != nil
-    addArrangedSubview(modePopup)
 
-    let roleButton = DeviceRoleMenuButton(device: device, previewMode: preferences == nil)
-    roleButton.onResult = { [weak self] result in self?.onResult?(result) }
-    addArrangedSubview(roleButton)
+    let directionLabel = NSTextField(labelWithString: flowText("devices.mouse.direction"))
+    directionLabel.font = NSFont.systemFont(ofSize: 11)
+    directionLabel.textColor = .secondaryLabelColor
+    let controls = NSStackView(views: [directionLabel, NSView(), modePopup])
+    controls.orientation = .horizontal
+    controls.alignment = .centerY
+    controls.spacing = 8
+    addArrangedSubview(controls)
+    controls.widthAnchor.constraint(equalTo: widthAnchor, constant: -24).isActive = true
   }
 
   @objc private func changeMouseMode() {

@@ -285,17 +285,17 @@ final class KeyboardDeviceRowView: AdaptiveCardStackView {
   }
 
   private func buildUI() {
-    orientation = .horizontal
-    alignment = .centerY
-    spacing = 10
-    edgeInsets = NSEdgeInsets(top: 7, left: 10, bottom: 7, right: 10)
+    orientation = .vertical
+    alignment = .leading
+    spacing = 8
+    edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
+
     let icon = NSImageView(
       image: NSImage(systemSymbolName: "keyboard", accessibilityDescription: device.name)
         ?? NSImage())
     icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 17, weight: .regular)
     icon.contentTintColor = .secondaryLabelColor
-    icon.widthAnchor.constraint(equalToConstant: 26).isActive = true
-    addArrangedSubview(icon)
+    icon.widthAnchor.constraint(equalToConstant: 24).isActive = true
 
     let labels = NSStackView()
     labels.orientation = .vertical
@@ -309,15 +309,21 @@ final class KeyboardDeviceRowView: AdaptiveCardStackView {
     let detailParts = [
       device.manufacturer,
       device.transport,
-      String(format: "VID %04X · PID %04X", device.vendorID, device.productID),
+      String(format: "VID %04X / PID %04X", device.vendorID, device.productID),
     ].filter { !$0.isEmpty }
     name.toolTip = ([device.name] + detailParts).joined(separator: "\n")
     labels.addArrangedSubview(name)
     labels.addArrangedSubview(statusLabel)
     labels.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-    labels.widthAnchor.constraint(greaterThanOrEqualToConstant: 100).isActive = true
-    addArrangedSubview(labels)
-    addArrangedSubview(NSView())
+
+    let roleButton = DeviceRoleMenuButton(device: device, previewMode: controller == nil)
+    roleButton.onResult = { [weak self] result in self?.onResult?(result) }
+    let header = NSStackView(views: [icon, labels, NSView(), roleButton])
+    header.orientation = .horizontal
+    header.alignment = .centerY
+    header.spacing = 8
+    addArrangedSubview(header)
+    header.widthAnchor.constraint(equalTo: widthAnchor, constant: -24).isActive = true
 
     for preset in KeyboardMappingPreset.selectableCases {
       presetPopup.addItem(withTitle: preset.title)
@@ -325,24 +331,34 @@ final class KeyboardDeviceRowView: AdaptiveCardStackView {
     }
     presetPopup.target = self
     presetPopup.action = #selector(selectionChanged)
-    presetPopup.widthAnchor.constraint(equalToConstant: 190).isActive = true
-    presetPopup.setAccessibilityLabel(device.name)
+    presetPopup.controlSize = .regular
+    presetPopup.font = NSFont.systemFont(ofSize: 13)
+    presetPopup.widthAnchor.constraint(equalToConstant: 240).isActive = true
+    presetPopup.heightAnchor.constraint(equalToConstant: 32).isActive = true
+    presetPopup.setAccessibilityLabel("\(device.name) \(flowText("devices.keyboard.layout"))")
     presetPopup.isEnabled = controller != nil
-    addArrangedSubview(presetPopup)
 
-    statusLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+    statusLabel.font = NSFont.systemFont(ofSize: 11)
     statusLabel.alignment = .left
+    statusLabel.lineBreakMode = .byTruncatingTail
 
     actionButton.target = self
     actionButton.action = #selector(performAction)
     actionButton.bezelStyle = .rounded
+    actionButton.controlSize = .regular
+    actionButton.font = NSFont.systemFont(ofSize: 13)
     actionButton.widthAnchor.constraint(equalToConstant: 72).isActive = true
-    actionButton.heightAnchor.constraint(equalToConstant: 30).isActive = true
-    addArrangedSubview(actionButton)
+    actionButton.heightAnchor.constraint(equalToConstant: 32).isActive = true
 
-    let roleButton = DeviceRoleMenuButton(device: device, previewMode: controller == nil)
-    roleButton.onResult = { [weak self] result in self?.onResult?(result) }
-    addArrangedSubview(roleButton)
+    let layoutLabel = NSTextField(labelWithString: flowText("devices.keyboard.layout"))
+    layoutLabel.font = NSFont.systemFont(ofSize: 11)
+    layoutLabel.textColor = .secondaryLabelColor
+    let controls = NSStackView(views: [layoutLabel, NSView(), presetPopup, actionButton])
+    controls.orientation = .horizontal
+    controls.alignment = .centerY
+    controls.spacing = 8
+    addArrangedSubview(controls)
+    controls.widthAnchor.constraint(equalTo: widthAnchor, constant: -24).isActive = true
   }
 
   private var selectedPreset: KeyboardMappingPreset {
@@ -374,7 +390,7 @@ final class KeyboardDeviceRowView: AdaptiveCardStackView {
     let selected = selectedPreset
     if let saved {
       statusLabel.stringValue = flowText("devices.keyboard.status.applied")
-      statusLabel.textColor = .systemGreen
+      statusLabel.textColor = .systemBlue
       actionButton.title =
         selected == .unchanged || selected == saved
         ? flowText("devices.keyboard.reset")

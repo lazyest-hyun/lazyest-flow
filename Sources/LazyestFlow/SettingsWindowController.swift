@@ -79,7 +79,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     action: #selector(reloadPressed))
   private let languagePopup = NSPopUpButton()
   private let settingsTabs = NSTabView()
-  private var tabButtons: [SettingsTabButton] = []
+  private var tabButtons: [SettingsNavigationButton] = []
+  private static let selectedPageKey = "LazyestFlow.settingsPage.v1"
   private let dockDisplayPopup = NSPopUpButton()
   private let dockPinStatusLabel = NSTextField(labelWithString: "")
   private let dockTimingStatusLabel = NSTextField(labelWithString: "")
@@ -108,19 +109,23 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     self.dockPinStatusProvider = dockPinStatusProvider
     self.keepAwakeStatusProvider = keepAwakeStatusProvider
     let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 820, height: 540),
+      contentRect: NSRect(x: 0, y: 0, width: 900, height: 620),
       styleMask: [.titled, .closable, .miniaturizable, .resizable],
       backing: .buffered,
       defer: false
     )
     window.contentView = FlowSettingsBackgroundView(
-      frame: NSRect(x: 0, y: 0, width: 820, height: 540))
+      frame: NSRect(x: 0, y: 0, width: 900, height: 620))
     window.title = flowText("title")
     window.isReleasedWhenClosed = false
-    window.minSize = NSSize(width: 760, height: 540)
+    window.minSize = NSSize(width: 860, height: 580)
     super.init(window: window)
     window.delegate = self
     buildUI()
+    if !previewMode {
+      if !window.setFrameUsingName("LazyestFlow.Settings") { window.center() }
+      window.setFrameAutosaveName("LazyestFlow.Settings")
+    }
     if previewMode {
       configurePreview()
       return
@@ -150,7 +155,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
       NotificationCenter.default.addObserver(
         forName: NSWindow.didResignKeyNotification, object: window, queue: .main
       ) { [weak self] _ in
-        self?.stopShortcutCaptureMonitor(reloadHotkeys: true)
+        self?.cancelShortcutEditing()
       },
     ]
     loadFromDisk()
@@ -176,73 +181,133 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
   private func buildUI() {
     guard let contentView = window?.contentView else { return }
-    let root = NSStackView()
-    root.orientation = .vertical
-    root.alignment = .width
-    root.spacing = 10
-    root.edgeInsets = NSEdgeInsets(top: 14, left: 14, bottom: 12, right: 14)
-    root.translatesAutoresizingMaskIntoConstraints = false
-    contentView.addSubview(root)
-    NSLayoutConstraint.activate([
-      root.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-      root.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-      root.topAnchor.constraint(equalTo: contentView.topAnchor),
-      root.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
-    ])
+    let sidebar = NSVisualEffectView()
+    sidebar.material = .sidebar
+    sidebar.blendingMode = .withinWindow
+    sidebar.state = .active
+    sidebar.translatesAutoresizingMaskIntoConstraints = false
+    contentView.addSubview(sidebar)
 
-    let tabBarRow = NSStackView()
-    tabBarRow.orientation = .horizontal
-    let tabBar = NSStackView()
-    tabBar.orientation = .horizontal
-    tabBar.distribution = .fillEqually
-    tabBar.spacing = 4
-    let tabDefinitions = [
-      (flowText("tab.general"), "gearshape"),
-      (flowText("tab.apps"), "keyboard"),
-      (flowText("tab.inputDevices"), "computermouse"),
-      (flowText("tab.screenshots"), "camera.viewfinder"),
-      (flowText("tab.keepAwake"), "sun.max"),
-      (flowText("tab.dockPin"), "dock.rectangle"),
+    let navigation = NSStackView()
+    navigation.orientation = .vertical
+    navigation.alignment = .leading
+    navigation.spacing = 4
+    navigation.edgeInsets = NSEdgeInsets(top: 24, left: 12, bottom: 14, right: 12)
+    navigation.translatesAutoresizingMaskIntoConstraints = false
+    sidebar.addSubview(navigation)
+    let brand = NSTextField(labelWithString: "Lazyest Flow")
+    brand.font = .systemFont(ofSize: 16, weight: .semibold)
+    brand.heightAnchor.constraint(equalToConstant: 30).isActive = true
+    navigation.addArrangedSubview(brand)
+    navigation.setCustomSpacing(20, after: brand)
+
+    let definitions: [(Int, String, String)] = [
+      (1, "tab.apps", "command"), (2, "tab.inputDevices", "keyboard"),
+      (3, "tab.screenshots", "camera.viewfinder"), (5, "tab.dockPin", "dock.rectangle"),
+      (4, "tab.keepAwake", "moon"), (0, "tab.general", "gearshape"),
     ]
-    for (index, definition) in tabDefinitions.enumerated() {
-      let button = SettingsTabButton(title: definition.0, symbolName: definition.1)
+    for (position, definition) in definitions.enumerated() {
+      if position == 0 || position == 2 || position == 4 {
+        let key = position == 0 ? "nav.work" : (position == 2 ? "nav.screen" : "nav.system")
+        let label = NSTextField(labelWithString: flowText(key))
+        label.font = .systemFont(ofSize: 11, weight: .medium)
+        label.textColor = .secondaryLabelColor
+        if position > 0 { navigation.setCustomSpacing(18, after: navigation.arrangedSubviews.last!) }
+        navigation.addArrangedSubview(label)
+        navigation.setCustomSpacing(6, after: label)
+      }
+      let button = SettingsNavigationButton(title: flowText(definition.1), symbolName: definition.2)
       button.target = self
       button.action = #selector(selectSettingsTab(_:))
-      button.tag = index
-      button.isSelectedTab = index == 0
+      button.tag = definition.0
       tabButtons.append(button)
-      tabBar.addArrangedSubview(button)
+      navigation.addArrangedSubview(button)
     }
-    tabBar.widthAnchor.constraint(lessThanOrEqualToConstant: 900).isActive = true
-    tabBarRow.addArrangedSubview(NSView())
-    tabBarRow.addArrangedSubview(tabBar)
-    tabBarRow.addArrangedSubview(NSView())
-    root.addArrangedSubview(tabBarRow)
-    tabBar.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -28).isActive = true
+    for view in navigation.arrangedSubviews {
+      view.widthAnchor.constraint(equalTo: navigation.widthAnchor, constant: -24).isActive = true
+    }
+    navigation.addArrangedSubview(NSView())
 
+    let detail = NSView()
+    detail.translatesAutoresizingMaskIntoConstraints = false
+    contentView.addSubview(detail)
+    let divider = separator()
+    divider.translatesAutoresizingMaskIntoConstraints = false
+    contentView.addSubview(divider)
     settingsTabs.tabViewType = .noTabsNoBorder
-    settingsTabs.frame = NSRect(x: 0, y: 0, width: 792, height: 400)
     settingsTabs.translatesAutoresizingMaskIntoConstraints = false
-    settingsTabs.addTabViewItem(generalTab())
-    settingsTabs.addTabViewItem(appBindingsTab())
-    settingsTabs.addTabViewItem(inputDevicesTab())
-    settingsTabs.addTabViewItem(screenshotsTab())
-    settingsTabs.addTabViewItem(keepAwakeTab())
-    settingsTabs.addTabViewItem(dockPinTab())
-    root.addArrangedSubview(settingsTabs)
-    settingsTabs.widthAnchor.constraint(equalTo: contentView.widthAnchor, constant: -28).isActive =
-      true
-    settingsTabs.heightAnchor.constraint(greaterThanOrEqualToConstant: 400).isActive = true
+    for page in [generalTab(), appBindingsTab(), inputDevicesTab(), screenshotsTab(), keepAwakeTab(), dockPinTab()] {
+      settingsTabs.addTabViewItem(page)
+    }
+    detail.addSubview(settingsTabs)
+    let fillWidth = settingsTabs.widthAnchor.constraint(equalTo: detail.widthAnchor)
+    fillWidth.priority = .defaultHigh
 
     let footer = NSStackView()
     footer.orientation = .horizontal
+    footer.alignment = .centerY
     footer.spacing = 8
+    footer.translatesAutoresizingMaskIntoConstraints = false
     statusLabel.textColor = .secondaryLabelColor
     statusLabel.font = NSFont.systemFont(ofSize: 11)
+    statusLabel.lineBreakMode = .byTruncatingTail
+    statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    footerReloadButton.isBordered = false
     footer.addArrangedSubview(statusLabel)
     footer.addArrangedSubview(NSView())
     footer.addArrangedSubview(footerReloadButton)
-    root.addArrangedSubview(footer)
+    detail.addSubview(footer)
+    NSLayoutConstraint.activate([
+      sidebar.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+      sidebar.topAnchor.constraint(equalTo: contentView.topAnchor),
+      sidebar.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+      sidebar.widthAnchor.constraint(equalToConstant: 176),
+      navigation.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor),
+      navigation.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor),
+      navigation.topAnchor.constraint(equalTo: sidebar.topAnchor),
+      navigation.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor),
+      divider.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
+      divider.widthAnchor.constraint(equalToConstant: 1),
+      divider.topAnchor.constraint(equalTo: contentView.topAnchor),
+      divider.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+      detail.leadingAnchor.constraint(equalTo: divider.trailingAnchor),
+      detail.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+      detail.topAnchor.constraint(equalTo: contentView.topAnchor),
+      detail.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+      settingsTabs.topAnchor.constraint(equalTo: detail.topAnchor),
+      settingsTabs.centerXAnchor.constraint(equalTo: detail.centerXAnchor),
+      settingsTabs.widthAnchor.constraint(lessThanOrEqualTo: detail.widthAnchor),
+      settingsTabs.widthAnchor.constraint(lessThanOrEqualToConstant: 820), fillWidth,
+      settingsTabs.bottomAnchor.constraint(equalTo: footer.topAnchor),
+      footer.leadingAnchor.constraint(equalTo: settingsTabs.leadingAnchor, constant: 24),
+      footer.trailingAnchor.constraint(equalTo: settingsTabs.trailingAnchor, constant: -24),
+      footer.heightAnchor.constraint(equalToConstant: 36),
+      footer.bottomAnchor.constraint(equalTo: detail.bottomAnchor, constant: -8),
+    ])
+    let saved = isPreview ? nil : UserDefaults.standard.string(forKey: Self.selectedPageKey)
+    let index = settingsTabs.tabViewItems.firstIndex { ($0.identifier as? String) == saved } ?? 1
+    selectPage(index)
+  }
+
+  private func selectPage(_ index: Int) {
+    guard settingsTabs.tabViewItems.indices.contains(index) else { return }
+    cancelShortcutEditing()
+    settingsTabs.selectTabViewItem(at: index)
+    for button in tabButtons { button.isSelectedTab = button.tag == index }
+    if !isPreview, let identifier = settingsTabs.selectedTabViewItem?.identifier as? String {
+      UserDefaults.standard.set(identifier, forKey: Self.selectedPageKey)
+    }
+  }
+
+  private func cancelShortcutEditing() {
+    if activeEditingRow != nil || isEditingHideAll {
+      activeEditingRow?.cancelEditing()
+      isEditingHideAll = false
+      stopShortcutCaptureMonitor(reloadHotkeys: true)
+      configureHideAllControls()
+      setAppShortcutEditingMode(activeRow: nil)
+      window?.makeFirstResponder(nil)
+    }
   }
 
   private func configureLanguagePopup() {
@@ -276,15 +341,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
   }
 
-  @objc private func selectSettingsTab(_ sender: SettingsTabButton) {
-    for button in tabButtons {
-      button.isSelectedTab = button === sender
-    }
-    settingsTabs.selectTabViewItem(at: sender.tag)
-    if (settingsTabs.selectedTabViewItem?.identifier as? String) == "general" {
-      refreshLoginLaunchUI()
-    }
-    if (settingsTabs.selectedTabViewItem?.identifier as? String) == "dock-anchor" {
+  @objc private func selectSettingsTab(_ sender: SettingsNavigationButton) {
+    selectPage(sender.tag)
+    guard !isPreview else { return }
+    if sender.tag == 0 { refreshLoginLaunchUI() }
+    if sender.tag == 5 {
       refreshDockPinUI(status: dockPinStatusProvider())
       refreshDockTimingUI()
     }
@@ -337,7 +398,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     stack.alignment = .leading
     stack.spacing = 4
     let titleLabel = NSTextField(labelWithString: title)
-    titleLabel.font = NSFont.systemFont(ofSize: 17, weight: .semibold)
+    titleLabel.font = NSFont.systemFont(ofSize: 22, weight: .semibold)
     titleLabel.alignment = .left
     stack.addArrangedSubview(titleLabel)
     if !detail.isEmpty {
@@ -355,14 +416,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     row.orientation = .horizontal
     row.alignment = .centerY
     row.spacing = 12
-    row.edgeInsets = NSEdgeInsets(top: 10, left: 2, bottom: 10, right: 2)
+    row.edgeInsets = NSEdgeInsets(top: 9, left: 0, bottom: 9, right: 0)
 
     let labels = NSStackView()
     labels.orientation = .vertical
     labels.alignment = .leading
     labels.spacing = 2
     let titleLabel = NSTextField(wrappingLabelWithString: title)
-    titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+    titleLabel.font = NSFont.systemFont(ofSize: 13)
     let heading = NSStackView(views: [titleLabel])
     heading.spacing = 6
     heading.alignment = .centerY
@@ -412,8 +473,80 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     return box
   }
 
+  private func settingsPage(title: String, detail: String) -> NSStackView {
+    let page = NSStackView()
+    page.orientation = .vertical
+    page.alignment = .leading
+    page.spacing = 20
+    page.edgeInsets = NSEdgeInsets(top: 26, left: 24, bottom: 18, right: 24)
+    let header = pageHeader(title: title, detail: detail)
+    page.addArrangedSubview(header)
+    header.widthAnchor.constraint(equalTo: page.widthAnchor, constant: -48).isActive = true
+    page.setCustomSpacing(24, after: header)
+    return page
+  }
+
+  private func settingsGroup(title: String? = nil, rows: [NSView]) -> NSStackView {
+    let group = NSStackView()
+    group.orientation = .vertical
+    group.alignment = .leading
+    group.spacing = 8
+    if let title {
+      let label = NSTextField(labelWithString: title)
+      label.font = .systemFont(ofSize: 12, weight: .semibold)
+      label.textColor = .secondaryLabelColor
+      label.alignment = .left
+      group.addArrangedSubview(label)
+    }
+    let card = AdaptiveCardStackView()
+    card.orientation = .vertical
+    card.alignment = .width
+    card.spacing = 0
+    card.edgeInsets = NSEdgeInsets(top: 4, left: 14, bottom: 4, right: 14)
+    for (index, row) in rows.enumerated() {
+      if index > 0 { card.addArrangedSubview(separator()) }
+      card.addArrangedSubview(row)
+    }
+    group.addArrangedSubview(card)
+    card.widthAnchor.constraint(equalTo: group.widthAnchor).isActive = true
+    for row in card.arrangedSubviews {
+      row.widthAnchor.constraint(equalTo: card.widthAnchor, constant: -28).isActive = true
+    }
+    return group
+  }
+
+  private func controls(_ views: [NSView]) -> NSStackView {
+    let row = NSStackView(views: views)
+    row.orientation = .horizontal
+    row.alignment = .centerY
+    row.spacing = 8
+    return row
+  }
+
+  private func statusView(_ label: NSTextField) -> NSView {
+    label.font = .systemFont(ofSize: 11)
+    label.lineBreakMode = .byTruncatingTail
+    label.textColor = .secondaryLabelColor
+    let view = NSView()
+    view.heightAnchor.constraint(equalToConstant: 28).isActive = true
+    label.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(label)
+    NSLayoutConstraint.activate([
+      label.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+      label.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor),
+      label.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+    ])
+    return view
+  }
+
   private func scrollableTabView(content: NSView) -> NSScrollView {
-    let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 760, height: 400))
+    if let page = content as? NSStackView {
+      let horizontalInset = page.edgeInsets.left + page.edgeInsets.right
+      for view in page.arrangedSubviews {
+        view.widthAnchor.constraint(equalTo: page.widthAnchor, constant: -horizontalInset).isActive = true
+      }
+    }
+    let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 684, height: 540))
     scrollView.hasVerticalScroller = true
     scrollView.autohidesScrollers = true
     scrollView.drawsBackground = false
@@ -582,7 +715,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     let runtimeStatus = status ?? keepAwakeStatusProvider()
     let resolvedStatus: KeepAwakeStatus = enabled ? runtimeStatus : .off(runtimeStatus.power)
     switch resolvedStatus {
-    case .helperApprovalRequired, .helperUnavailable:
+    case .helperApprovalRequired:
       keepAwakeApprovalButton.isHidden = false
     default:
       keepAwakeApprovalButton.isHidden = true
@@ -673,90 +806,36 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   private func appBindingsTab() -> NSTabViewItem {
     let item = NSTabViewItem(identifier: "apps")
     item.label = flowText("tab.apps")
-    let root = NSStackView()
-    root.frame = NSRect(x: 0, y: 0, width: 760, height: 400)
-    root.orientation = .vertical
-    root.alignment = .width
-    root.spacing = 8
-    root.edgeInsets = NSEdgeInsets(top: 14, left: 18, bottom: 12, right: 18)
-
-    let header = NSStackView()
-    header.orientation = .horizontal
-    header.alignment = .centerY
-    header.spacing = 8
-    appsHintLabel.textColor = .secondaryLabelColor
-    appsHintLabel.font = NSFont.systemFont(ofSize: 12)
-    appsHintLabel.lineBreakMode = .byTruncatingTail
-    appsHintLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    let root = settingsPage(title: flowText("tab.apps"), detail: flowText("apps.hint"))
+    root.addArrangedSubview(settingsGroup(rows: [
+      settingRow(title: flowText("apps.enabled"), control: appHotkeysSwitch),
+      settingRow(title: flowText("apps.hideAll"), detail: flowText("apps.hideAllDetail"), control: appHotkeyControls()),
+    ]))
     let heading = NSStackView()
-    heading.orientation = .vertical
-    heading.alignment = .leading
-    heading.spacing = 4
-    let headingTitle = NSTextField(labelWithString: flowText("tab.apps"))
-    headingTitle.font = NSFont.systemFont(ofSize: 17, weight: .semibold)
-    heading.addArrangedSubview(headingTitle)
+    heading.alignment = .centerY
+    heading.spacing = 8
+    appsHintLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+    appsHintLabel.textColor = .secondaryLabelColor
+    appsHintLabel.toolTip = flowText("apps.hint")
     heading.addArrangedSubview(appsHintLabel)
-    header.addArrangedSubview(heading)
-    header.addArrangedSubview(NSView())
-    appAddButton.image = NSImage(
-      systemSymbolName: "plus", accessibilityDescription: flowText("apps.addRunning"))
+    heading.addArrangedSubview(NSView())
+    appAddButton.image = NSImage(systemSymbolName: "plus", accessibilityDescription: flowText("apps.addRunning"))
     appAddButton.imagePosition = .imageLeading
-    header.addArrangedSubview(appAddButton)
-    root.addArrangedSubview(header)
-    header.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -36).isActive = true
-    root.addArrangedSubview(separator())
-    root.addArrangedSubview(
-      compactSettingRow(title: flowText("apps.enabled"), control: appHotkeysSwitch))
-    root.addArrangedSubview(
-      compactSettingRow(title: flowText("apps.hideAll"), control: appHotkeyControls()))
-    let listSeparator = separator()
-    root.addArrangedSubview(listSeparator)
-
+    heading.addArrangedSubview(appAddButton)
+    root.addArrangedSubview(heading)
+    root.setCustomSpacing(8, after: heading)
     bindingsStack.orientation = .vertical
     bindingsStack.alignment = .width
     bindingsStack.spacing = 6
-    let scrollView = NSScrollView()
-    scrollView.hasVerticalScroller = true
-    scrollView.drawsBackground = false
-    let documentView = FlippedDocumentView()
-    documentView.translatesAutoresizingMaskIntoConstraints = false
-    bindingsStack.translatesAutoresizingMaskIntoConstraints = false
-    documentView.addSubview(bindingsStack)
-    NSLayoutConstraint.activate([
-      bindingsStack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor),
-      bindingsStack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor),
-      bindingsStack.topAnchor.constraint(equalTo: documentView.topAnchor),
-      bindingsStack.bottomAnchor.constraint(lessThanOrEqualTo: documentView.bottomAnchor),
-      bindingsStack.widthAnchor.constraint(equalTo: documentView.widthAnchor),
-    ])
-    scrollView.documentView = documentView
-    NSLayoutConstraint.activate([
-      documentView.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
-      documentView.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
-      documentView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor),
-    ])
-    let scrollContainer = NSView()
-    scrollView.translatesAutoresizingMaskIntoConstraints = false
-    scrollContainer.addSubview(scrollView)
-    root.addArrangedSubview(scrollContainer)
-    NSLayoutConstraint.activate([
-      listSeparator.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 18),
-      listSeparator.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -18),
-      scrollContainer.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 18),
-      scrollContainer.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -18),
-      scrollView.leadingAnchor.constraint(equalTo: scrollContainer.leadingAnchor),
-      scrollView.trailingAnchor.constraint(equalTo: scrollContainer.trailingAnchor),
-      scrollView.topAnchor.constraint(equalTo: scrollContainer.topAnchor),
-      scrollView.bottomAnchor.constraint(equalTo: scrollContainer.bottomAnchor),
-    ])
-    item.view = root
+    root.addArrangedSubview(bindingsStack)
+    item.view = scrollableTabView(content: root)
     return item
   }
 
   private func appHotkeyControls() -> NSStackView {
     hideAllShortcutField.widthAnchor.constraint(equalToConstant: 110).isActive = true
     hideAllShortcutField.alignment = .center
-    hideAllShortcutField.placeholderString = flowText("apps.editShortcutHint")
+    hideAllShortcutField.placeholderString = flowText("apps.notSet")
     hideAllEditButton.widthAnchor.constraint(equalToConstant: 72).isActive = true
     hideAllClearButton.widthAnchor.constraint(equalToConstant: 40).isActive = true
     let controls = NSStackView(views: [
@@ -772,242 +851,90 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   private func generalTab() -> NSTabViewItem {
     let item = NSTabViewItem(identifier: "general")
     item.label = flowText("tab.general")
-    let root = NSStackView()
-    root.orientation = .vertical
-    root.alignment = .width
-    root.spacing = 14
-    root.edgeInsets = NSEdgeInsets(top: 18, left: 18, bottom: 18, right: 18)
-
-    let header = pageHeader(
-      title: flowText("general.title"), detail: flowText("general.detail"))
-    root.addArrangedSubview(header)
-    header.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -36).isActive = true
-    root.addArrangedSubview(separator())
-
-    loginLaunchStatusLabel.alignment = .center
-    loginLaunchStatusLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
-    loginLaunchStatusLabel.wantsLayer = true
-    loginLaunchStatusLabel.layer?.cornerRadius = 7
-    loginLaunchStatusLabel.layer?.masksToBounds = true
-    loginLaunchStatusLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 64).isActive = true
-    let controls = NSStackView()
-    controls.orientation = .horizontal
-    controls.alignment = .centerY
-    controls.spacing = 8
-    controls.addArrangedSubview(loginLaunchStatusLabel)
-    controls.addArrangedSubview(loginLaunchSwitch)
-    root.addArrangedSubview(
-      settingRow(
-        title: flowText("general.loginLaunch"),
-        detail: flowText("general.loginLaunchDetail"),
-        control: controls
-      ))
-    root.addArrangedSubview(separator())
-    root.addArrangedSubview(
-      settingRow(
-        title: flowText("general.permissions"),
-        detail: flowText("general.permissionsDetail"),
-        control: generalPermissionButton
-      ))
-    root.addArrangedSubview(separator())
+    let root = settingsPage(title: flowText("general.title"), detail: "")
+    loginLaunchStatusLabel.font = .systemFont(ofSize: 11)
     configureLanguagePopup()
     languagePopup.target = self
     languagePopup.action = #selector(changeLanguage)
-    languagePopup.widthAnchor.constraint(equalToConstant: 118).isActive = true
-    root.addArrangedSubview(
-      settingRow(title: flowText("language.label"), control: languagePopup))
-    root.addArrangedSubview(separator())
-    root.addArrangedSubview(
-      settingRow(
-        title: flowText("general.remove"), detail: flowText("general.removeDetail"),
-        control: removeAgentButton
-      ))
-    root.addArrangedSubview(NSView())
-    item.view = root
+    languagePopup.widthAnchor.constraint(equalToConstant: 150).isActive = true
+    root.addArrangedSubview(settingsGroup(rows: [
+      settingRow(title: flowText("general.loginLaunch"), detail: flowText("general.loginLaunchDetail"),
+        control: controls([loginLaunchStatusLabel, loginLaunchSwitch])),
+      settingRow(title: flowText("language.label"), control: languagePopup),
+    ]))
+    root.addArrangedSubview(settingsGroup(title: flowText("section.permissions"), rows: [
+      settingRow(title: flowText("general.permissions"), detail: flowText("general.permissionsDetail"), control: generalPermissionButton),
+    ]))
+    root.addArrangedSubview(settingsGroup(title: flowText("section.app"), rows: [
+      settingRow(title: flowText("general.remove"), detail: flowText("general.removeDetail"), control: removeAgentButton),
+    ]))
+    item.view = scrollableTabView(content: root)
     return item
   }
 
   private func keepAwakeTab() -> NSTabViewItem {
     let item = NSTabViewItem(identifier: "keep-awake")
     item.label = flowText("tab.keepAwake")
-    let root = NSStackView()
-    root.orientation = .vertical
-    root.alignment = .width
-    root.spacing = 14
-    root.edgeInsets = NSEdgeInsets(top: 18, left: 18, bottom: 18, right: 18)
-
-    let header = pageHeader(title: flowText("keep.title"), detail: flowText("keep.detail"))
-    root.addArrangedSubview(header)
-    header.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -36).isActive = true
-    root.addArrangedSubview(separator())
-    let approvalSlot = NSView()
-    approvalSlot.widthAnchor.constraint(equalToConstant: 104).isActive = true
-    approvalSlot.heightAnchor.constraint(equalToConstant: 32).isActive = true
-    keepAwakeApprovalButton.translatesAutoresizingMaskIntoConstraints = false
-    approvalSlot.addSubview(keepAwakeApprovalButton)
-    NSLayoutConstraint.activate([
-      keepAwakeApprovalButton.leadingAnchor.constraint(equalTo: approvalSlot.leadingAnchor),
-      keepAwakeApprovalButton.trailingAnchor.constraint(equalTo: approvalSlot.trailingAnchor),
-      keepAwakeApprovalButton.centerYAnchor.constraint(equalTo: approvalSlot.centerYAnchor),
-    ])
-    let masterControls = NSStackView()
-    masterControls.orientation = .horizontal
-    masterControls.alignment = .centerY
-    masterControls.spacing = 8
-    masterControls.addArrangedSubview(approvalSlot)
-    masterControls.addArrangedSubview(keepAwakeSwitch)
-    root.addArrangedSubview(
-      settingRow(title: flowText("keep.prevent"), control: masterControls))
-    root.addArrangedSubview(separator())
-    root.addArrangedSubview(
-      settingRow(
-        title: flowText("keep.powerScope"),
-        detail: flowText("keep.powerScopeDetail"),
-        control: keepAwakePowerScopeControl
-      ))
-    root.addArrangedSubview(separator())
-    root.addArrangedSubview(
-      settingRow(
-        title: flowText("keep.lockOnLid"),
-        detail: flowText("keep.lockOnLidDetail"),
-        control: lockOnLidCloseSwitch
-      ))
-    root.addArrangedSubview(separator())
-    root.addArrangedSubview(
-      settingRow(
-        title: flowText("keep.sleepOnKoreanLid"),
-        detail: flowText("keep.sleepOnKoreanLidDetail"),
-        control: sleepOnKoreanLidCloseSwitch
-      ))
-    root.addArrangedSubview(separator())
-    keepAwakeStatusLabel.font = NSFont.systemFont(ofSize: 12, weight: .medium)
-    keepAwakeStatusLabel.lineBreakMode = .byTruncatingTail
-    keepAwakeStatusLabel.heightAnchor.constraint(equalToConstant: 22).isActive = true
-    root.addArrangedSubview(keepAwakeStatusLabel)
-    keepAwakeStatusLabel.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -36).isActive =
-      true
-    root.addArrangedSubview(NSView())
-    item.view = root
+    let root = settingsPage(title: flowText("keep.title"), detail: flowText("keep.detail"))
+    root.addArrangedSubview(settingsGroup(rows: [
+      settingRow(title: flowText("keep.prevent"), control: controls([keepAwakeApprovalButton, keepAwakeSwitch])),
+      statusView(keepAwakeStatusLabel),
+    ]))
+    root.addArrangedSubview(settingsGroup(title: flowText("section.power"), rows: [
+      settingRow(title: flowText("keep.powerScope"), detail: flowText("keep.powerScopeDetail"), control: keepAwakePowerScopeControl),
+    ]))
+    root.addArrangedSubview(settingsGroup(title: flowText("section.lid"), rows: [
+      settingRow(title: flowText("keep.lockOnLid"), detail: flowText("keep.lockOnLidDetail"), control: lockOnLidCloseSwitch),
+      settingRow(title: flowText("keep.sleepOnKoreanLid"), detail: flowText("keep.sleepOnKoreanLidDetail"), control: sleepOnKoreanLidCloseSwitch),
+    ]))
+    item.view = scrollableTabView(content: root)
     return item
   }
 
   private func dockPinTab() -> NSTabViewItem {
     let item = NSTabViewItem(identifier: "dock-anchor")
     item.label = flowText("tab.dockPin")
-    let root = NSStackView()
-    root.orientation = .vertical
-    root.alignment = .width
-    root.spacing = 14
-    root.edgeInsets = NSEdgeInsets(top: 18, left: 18, bottom: 18, right: 18)
-
-    let header = pageHeader(title: flowText("dock.title"), detail: flowText("dock.detail"))
-    root.addArrangedSubview(header)
-    header.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -36).isActive = true
-    root.addArrangedSubview(separator())
-
-    dockPinStatusLabel.alignment = .center
-    dockPinStatusLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
-    dockPinStatusLabel.wantsLayer = true
-    dockPinStatusLabel.layer?.cornerRadius = 7
-    dockPinStatusLabel.layer?.masksToBounds = true
-    dockPinStatusLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 76).isActive = true
-    let anchorControls = NSStackView()
-    anchorControls.orientation = .horizontal
-    anchorControls.spacing = 8
-    anchorControls.addArrangedSubview(dockPinStatusLabel)
-    anchorControls.addArrangedSubview(dockPermissionButton)
-    anchorControls.addArrangedSubview(dockPinSwitch)
-    root.addArrangedSubview(settingRow(title: flowText("dock.checkbox"), control: anchorControls))
-    root.addArrangedSubview(separator())
-
+    let root = settingsPage(title: flowText("dock.title"), detail: flowText("dock.detail"))
     dockDisplayPopup.target = self
     dockDisplayPopup.action = #selector(saveRuntimeSettings)
-    dockDisplayPopup.widthAnchor.constraint(equalToConstant: 440).isActive = true
-    root.addArrangedSubview(settingRow(title: flowText("dock.display"), control: dockDisplayPopup))
-    root.addArrangedSubview(separator())
-
-    dockTimingStatusLabel.alignment = .center
-    dockTimingStatusLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
-    dockTimingStatusLabel.wantsLayer = true
-    dockTimingStatusLabel.layer?.cornerRadius = 7
-    dockTimingStatusLabel.layer?.masksToBounds = true
-    dockTimingStatusLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 90).isActive = true
-    let timingControls = NSStackView()
-    timingControls.orientation = .horizontal
-    timingControls.spacing = 8
-    timingControls.addArrangedSubview(dockTimingStatusLabel)
-    timingControls.addArrangedSubview(dockTimingSwitch)
-    root.addArrangedSubview(
-      settingRow(
-        title: flowText("dock.timing"), detail: flowText("dock.timingDetail"),
-        control: timingControls))
-    root.addArrangedSubview(NSView())
-    item.view = root
+    dockDisplayPopup.widthAnchor.constraint(equalToConstant: 260).isActive = true
+    root.addArrangedSubview(settingsGroup(title: flowText("section.position"), rows: [
+      settingRow(title: flowText("dock.checkbox"), detail: flowText("dock.positionDetail"), control: controls([dockPermissionButton, dockPinSwitch])),
+      settingRow(title: flowText("dock.display"), control: dockDisplayPopup),
+      statusView(dockPinStatusLabel),
+    ]))
+    root.addArrangedSubview(settingsGroup(title: flowText("section.response"), rows: [
+      settingRow(title: flowText("dock.timing"), detail: flowText("dock.timingDetail"), control: dockTimingSwitch),
+      statusView(dockTimingStatusLabel),
+    ]))
+    item.view = scrollableTabView(content: root)
     return item
   }
 
   private func inputDevicesTab() -> NSTabViewItem {
     let item = NSTabViewItem(identifier: "input-devices")
     item.label = flowText("tab.inputDevices")
-    let root = NSStackView()
-    root.orientation = .vertical
-    root.alignment = .width
-    root.spacing = 14
-    root.edgeInsets = NSEdgeInsets(top: 18, left: 18, bottom: 18, right: 18)
-
-    let header = pageHeader(title: flowText("devices.title"), detail: flowText("devices.detail"))
-    root.addArrangedSubview(header)
-    header.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -36).isActive = true
-    root.addArrangedSubview(separator())
-
-    let mouseHeading = pageHeader(title: flowText("devices.mouse.title"), detail: "")
-    if let titleLabel = mouseHeading.arrangedSubviews.first as? NSTextField {
-      titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
-    }
-    root.addArrangedSubview(mouseHeading)
-    mouseHeading.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -36).isActive = true
-
-    mouseScrollStatusLabel.alignment = .center
-    mouseScrollStatusLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
-    mouseScrollStatusLabel.wantsLayer = true
-    mouseScrollStatusLabel.layer?.cornerRadius = 7
-    mouseScrollStatusLabel.layer?.masksToBounds = true
-    mouseScrollStatusLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 76).isActive = true
-    let mouseControls = NSStackView()
-    mouseControls.orientation = .horizontal
-    mouseControls.alignment = .centerY
-    mouseControls.spacing = 8
-    mouseControls.addArrangedSubview(mouseScrollStatusLabel)
-    mouseControls.addArrangedSubview(mousePermissionButton)
-    mouseControls.addArrangedSubview(mouseScrollReverseSwitch)
-    root.addArrangedSubview(
-      settingRow(
-        title: flowText("devices.mouse.reverse"),
-        detail: flowText("devices.mouse.reverseDetail"),
-        control: mouseControls
-      ))
+    let root = settingsPage(title: flowText("devices.title"), detail: "")
+    root.addArrangedSubview(settingsGroup(title: flowText("devices.mouse.title"), rows: [
+      settingRow(title: flowText("devices.mouse.reverse"), detail: flowText("devices.mouse.reverseDetail"),
+        control: controls([mousePermissionButton, mouseScrollReverseSwitch])),
+      statusView(mouseScrollStatusLabel),
+    ]))
     mouseDevicesStack.orientation = .vertical
     mouseDevicesStack.alignment = .width
     mouseDevicesStack.spacing = 8
+    root.setCustomSpacing(8, after: root.arrangedSubviews.last!)
     root.addArrangedSubview(mouseDevicesStack)
-
-    root.addArrangedSubview(separator())
-
-    let keyboardHeading = pageHeader(
-      title: flowText("devices.keyboard.title"), detail: flowText("devices.keyboard.detail"))
-    if let titleLabel = keyboardHeading.arrangedSubviews.first as? NSTextField {
-      titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
-      titleLabel.alignment = .left
-    }
-    root.addArrangedSubview(keyboardHeading)
-    keyboardHeading.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -36).isActive = true
+    let heading = NSTextField(labelWithString: flowText("devices.keyboard.title"))
+    heading.font = .systemFont(ofSize: 12, weight: .semibold)
+    heading.textColor = .secondaryLabelColor
+    heading.toolTip = flowText("devices.keyboard.detail")
+    root.addArrangedSubview(heading)
+    root.setCustomSpacing(8, after: heading)
     keyboardDevicesStack.orientation = .vertical
     keyboardDevicesStack.alignment = .width
     keyboardDevicesStack.spacing = 8
     root.addArrangedSubview(keyboardDevicesStack)
-
-    root.addArrangedSubview(NSView())
-
     item.view = scrollableTabView(content: root)
     return item
   }
@@ -1015,54 +942,22 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   private func screenshotsTab() -> NSTabViewItem {
     let item = NSTabViewItem(identifier: "screenshots")
     item.label = flowText("tab.screenshots")
-    let root = NSStackView()
-    root.orientation = .vertical
-    root.alignment = .width
-    root.spacing = 14
-    root.edgeInsets = NSEdgeInsets(top: 18, left: 18, bottom: 18, right: 18)
-
-    let header = pageHeader(
-      title: flowText("screenshots.title"), detail: flowText("screenshots.detail"))
-    root.addArrangedSubview(header)
-    header.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -36).isActive = true
-    root.addArrangedSubview(separator())
-
-    let pathControls = NSStackView()
-    pathControls.orientation = .horizontal
-    pathControls.spacing = 8
-    screenshotFolderButton.widthAnchor.constraint(lessThanOrEqualToConstant: 390).isActive = true
-    screenshotFolderButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
+    let root = settingsPage(title: flowText("screenshots.title"), detail: flowText("screenshots.detail"))
+    root.addArrangedSubview(settingsGroup(rows: [
+      settingRow(title: flowText("screenshots.copy"), detail: flowText("screenshots.copyDetail"),
+        control: controls([screenshotPermissionButton, screenshotWatchSwitch])),
+      statusView(screenshotStatusLabel),
+    ]))
+    screenshotFolderButton.widthAnchor.constraint(lessThanOrEqualToConstant: 280).isActive = true
+    screenshotFolderButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
     screenshotFolderButton.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-    pathControls.addArrangedSubview(screenshotFolderButton)
-    pathControls.addArrangedSubview(
-      actionButton(
-        title: flowText("screenshots.choose"), action: #selector(chooseScreenshotDirectory)))
-    root.addArrangedSubview(
-      settingRow(title: flowText("screenshots.folder"), control: pathControls))
-    root.addArrangedSubview(separator())
-    screenshotStatusLabel.alignment = .center
-    screenshotStatusLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
-    screenshotStatusLabel.wantsLayer = true
-    screenshotStatusLabel.layer?.cornerRadius = 7
-    screenshotStatusLabel.layer?.masksToBounds = true
-    screenshotStatusLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 76).isActive =
-      true
-    let screenshotControls = NSStackView()
-    screenshotControls.orientation = .horizontal
-    screenshotControls.alignment = .centerY
-    screenshotControls.spacing = 8
-    screenshotControls.addArrangedSubview(screenshotStatusLabel)
-    screenshotControls.addArrangedSubview(screenshotPermissionButton)
-    screenshotControls.addArrangedSubview(screenshotWatchSwitch)
-    root.addArrangedSubview(
-      settingRow(
-        title: flowText("screenshots.copy"),
-        detail: flowText("screenshots.copyDetail"),
-        control: screenshotControls
-      ))
-    root.addArrangedSubview(separator())
-    root.addArrangedSubview(NSView())
-    item.view = root
+    root.addArrangedSubview(settingsGroup(title: flowText("section.file"), rows: [
+      settingRow(title: flowText("screenshots.folder"), control: controls([
+        screenshotFolderButton,
+        actionButton(title: flowText("screenshots.choose"), action: #selector(chooseScreenshotDirectory)),
+      ])),
+    ]))
+    item.view = scrollableTabView(content: root)
     return item
   }
 
@@ -1110,18 +1005,16 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   /// constructing Flow runtime controllers, event taps or power helpers.
   func renderPreviews(to directory: URL) throws {
     guard isPreview, let window, let contentView = window.contentView else { return }
+    try validatePreviewNavigation()
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let names = ["general", "shortcuts", "input-devices", "screenshots", "keep-awake", "dock"]
     for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
       window.appearance = NSAppearance(named: appearanceName)
       let style = appearanceName == .aqua ? "light" : "dark"
-      for width in [760, 960] {
+      for width in [860, 1060] {
         window.setContentSize(NSSize(width: width, height: 580))
         for (index, name) in names.enumerated() {
-          settingsTabs.selectTabViewItem(at: index)
-          for (buttonIndex, button) in tabButtons.enumerated() {
-            button.isSelectedTab = buttonIndex == index
-          }
+          selectPage(index)
           contentView.layoutSubtreeIfNeeded()
           contentView.displayIfNeeded()
           guard let bitmap = contentView.bitmapImageRepForCachingDisplay(in: contentView.bounds)
@@ -1135,6 +1028,35 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
           try data.write(to: directory.appendingPathComponent("flow-\(name)-\(style)-\(width).png"))
         }
       }
+    }
+  }
+
+  /// Exercise real edit/cancel paths using only the synthetic preview model.
+  private func validatePreviewNavigation() throws {
+    guard isPreview, let row = rows.first else { return }
+    var starts = 0
+    var ends = 0
+    onShortcutCaptureStart = { starts += 1 }
+    onShortcutCaptureEnd = { ends += 1 }
+    defer { onShortcutCaptureStart = nil; onShortcutCaptureEnd = nil }
+    let original = row.binding.shortcut
+    selectPage(1)
+    editRow(row.editButton)
+    row.shortcutField.lastCompleteShortcut = "ctrl+shift+x"
+    selectPage(4)
+    guard starts == 1, ends == 1, activeEditingRow == nil, !row.isEditing,
+      shortcutCaptureMonitor == nil, row.binding.shortcut == original,
+      row.shortcutField.lastCompleteShortcut == original,
+      row.shortcutField.stringValue == displayShortcut(original) else {
+      throw NSError(domain: "FlowPreview", code: 1, userInfo: [NSLocalizedDescriptionKey: "Page change did not cancel shortcut editing"])
+    }
+    selectPage(1)
+    editHideAllShortcut()
+    hideAllShortcutField.lastCompleteShortcut = "ctrl+shift+y"
+    cancelShortcutEditing()
+    guard starts == 2, ends == 2, !isEditingHideAll, shortcutCaptureMonitor == nil,
+      hideAllBinding.shortcut.isEmpty, hideAllShortcutField.lastCompleteShortcut.isEmpty else {
+      throw NSError(domain: "FlowPreview", code: 2, userInfo: [NSLocalizedDescriptionKey: "Focus change did not cancel shortcut editing"])
     }
   }
 
@@ -1188,8 +1110,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     view.alignment = .centerY
     view.distribution = .fill
     view.heightAnchor.constraint(greaterThanOrEqualToConstant: 48).isActive = true
-    row.iconView.widthAnchor.constraint(equalToConstant: 30).isActive = true
-    row.iconView.heightAnchor.constraint(equalToConstant: 30).isActive = true
+    row.iconView.widthAnchor.constraint(equalToConstant: 26).isActive = true
+    row.iconView.heightAnchor.constraint(equalToConstant: 26).isActive = true
 
     let identity = NSStackView()
     identity.orientation = .vertical
@@ -1197,7 +1119,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     identity.spacing = 2
     identity.addArrangedSubview(row.label)
     row.label.toolTip = row.binding.bundleID
-    identity.widthAnchor.constraint(greaterThanOrEqualToConstant: 140).isActive = true
+    identity.widthAnchor.constraint(greaterThanOrEqualToConstant: 92).isActive = true
     identity.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
     let appInfo = NSStackView()
@@ -1211,7 +1133,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     row.shortcutField.widthAnchor.constraint(equalToConstant: 110).isActive = true
     row.shortcutField.alignment = .center
-    row.shortcutField.placeholderString = flowText("apps.editShortcutHint")
+    row.shortcutField.placeholderString = flowText("apps.capturePlaceholder")
     row.shortcutField.lineBreakMode = .byTruncatingMiddle
     row.enabledSwitch.target = self
     row.enabledSwitch.action = #selector(toggleRowEnabled(_:))
@@ -1221,7 +1143,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     row.editButton.bezelStyle = .rounded
     row.editButton.controlSize = .regular
     row.editButton.heightAnchor.constraint(equalToConstant: 32).isActive = true
-    row.editButton.widthAnchor.constraint(equalToConstant: 72).isActive = true
+    row.editButton.widthAnchor.constraint(equalToConstant: 64).isActive = true
     row.removeButton.target = self
     row.removeButton.action = #selector(removeRow(_:))
     row.removeButton.bezelStyle = .rounded
@@ -1232,7 +1154,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     row.removeButton.imagePosition = .imageOnly
     row.removeButton.contentTintColor = .systemRed
     row.removeButton.heightAnchor.constraint(equalToConstant: 32).isActive = true
-    row.removeButton.widthAnchor.constraint(equalToConstant: 84).isActive = true
+    row.removeButton.widthAnchor.constraint(equalToConstant: 32).isActive = true
 
     let switchSlot = NSView()
     switchSlot.widthAnchor.constraint(equalToConstant: 48).isActive = true
@@ -1253,7 +1175,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     for control in [row.shortcutField, row.editButton, row.removeButton, switchSlot] as [NSView] {
       trailingControls.addArrangedSubview(control)
     }
-    trailingControls.widthAnchor.constraint(equalToConstant: 338).isActive = true
+    trailingControls.widthAnchor.constraint(equalToConstant: 278).isActive = true
 
     let flexibleSpace = NSView()
     flexibleSpace.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -1512,9 +1434,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   private func configureHideAllControls() {
     let configured = parseShortcut(hideAllBinding.shortcut) != nil
     if !isEditingHideAll {
-      hideAllShortcutField.stringValue = hideAllBinding.shortcut
+      hideAllShortcutField.stringValue = displayShortcut(hideAllBinding.shortcut)
       hideAllShortcutField.lastCompleteShortcut = hideAllBinding.shortcut
     }
+    hideAllShortcutField.placeholderString = flowText(isEditingHideAll ? "apps.capturePlaceholder" : "apps.notSet")
+    hideAllShortcutField.toolTip = flowText("apps.editShortcutHint")
     hideAllShortcutField.isEditable = false
     hideAllShortcutField.isSelectable = false
     hideAllShortcutField.isBordered = isEditingHideAll
@@ -1602,10 +1526,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         row.shortcutField.isCapturingShortcut = true
         row.editButton.isEnabled = true
         row.removeButton.isEnabled = true
-        row.removeButton.title = flowText("apps.cancel")
+        row.removeButton.title = ""
         row.removeButton.image = NSImage(
           systemSymbolName: "xmark", accessibilityDescription: flowText("apps.cancel"))
-        row.removeButton.imagePosition = .imageLeading
+        row.removeButton.imagePosition = .imageOnly
         row.removeButton.contentTintColor = .controlAccentColor
         row.removeButton.toolTip = flowText("apps.cancel")
         row.shortcutField.textColor = .labelColor
@@ -1641,6 +1565,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   }
 
   private func stopShortcutCaptureMonitor(reloadHotkeys: Bool) {
+    let wasCapturing = shortcutCaptureMonitor != nil || activeShortcutField != nil
     if let shortcutCaptureMonitor {
       NSEvent.removeMonitor(shortcutCaptureMonitor)
       self.shortcutCaptureMonitor = nil
@@ -1652,16 +1577,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     activeShortcutField = nil
     activeShortcutLabel = ""
     shortcutCaptureCancel = nil
-    if reloadHotkeys {
+    if reloadHotkeys && wasCapturing {
       onShortcutCaptureEnd?()
     }
   }
 
   private func updateAppsHint(count: Int) {
-    appsHintLabel.stringValue =
-      count == 0
-      ? flowText("apps.hint")
-      : "\(count)\(flowText("apps.countSuffix")) · \(flowText("apps.hint"))"
+    appsHintLabel.stringValue = "\(flowText("section.registeredApps")) · \(count)\(flowText("apps.countSuffix"))"
   }
 
   @objc private func chooseScreenshotDirectory() {

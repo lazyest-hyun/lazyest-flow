@@ -4,8 +4,8 @@ class AdaptiveCardStackView: NSStackView {
   override init(frame frameRect: NSRect) {
     super.init(frame: frameRect)
     wantsLayer = true
-    layer?.cornerRadius = 8
-    layer?.borderWidth = 1
+    layer?.cornerRadius = 10
+    layer?.borderWidth = 0.5
     updateCardAppearance()
   }
 
@@ -27,7 +27,7 @@ class AdaptiveCardStackView: NSStackView {
         .withAlphaComponent(isDark ? 0.35 : 0.9).cgColor
       layer.borderColor =
         NSColor.separatorColor
-        .withAlphaComponent(isDark ? 0.28 : 0.5).cgColor
+        .withAlphaComponent(isDark ? 0.18 : 0.10).cgColor
     }
   }
 }
@@ -79,7 +79,7 @@ final class BindingRow {
     self.draftShortcut = binding.shortcut
     label.stringValue = binding.label
     bundleID.stringValue = binding.bundleID
-    shortcutField.stringValue = binding.shortcut
+    shortcutField.stringValue = displayShortcut(binding.shortcut)
     shortcutField.lastCompleteShortcut = binding.shortcut
     enabledSwitch.state = binding.isEnabled ? .on : .off
     refreshEnabledAppearance()
@@ -96,8 +96,11 @@ final class BindingRow {
     if editing {
       draftShortcut = binding.shortcut
       shortcutField.lastCompleteShortcut = binding.shortcut
-      shortcutField.placeholderString = flowText("apps.editShortcutHint")
+      shortcutField.placeholderString = flowText("apps.capturePlaceholder")
     } else {
+      shortcutField.lastCompleteShortcut = binding.shortcut
+      shortcutField.stringValue = displayShortcut(binding.shortcut)
+      shortcutField.toolTip = binding.shortcut
       removeButton.title = ""
       removeButton.image = NSImage(
         systemSymbolName: "trash", accessibilityDescription: flowText("apps.remove"))
@@ -109,7 +112,7 @@ final class BindingRow {
   }
 
   func cancelEditing() {
-    shortcutField.stringValue = binding.shortcut
+    shortcutField.stringValue = displayShortcut(binding.shortcut)
     shortcutField.lastCompleteShortcut = binding.shortcut
     setEditing(false)
   }
@@ -139,8 +142,8 @@ final class ShortcutCaptureField: NSTextField {
   override var needsPanelToBecomeKey: Bool { true }
 
   override func becomeFirstResponder() -> Bool {
-    if stringValue.isEmpty {
-      placeholderString = flowText("apps.editShortcutHint")
+    if isCapturingShortcut && stringValue.isEmpty {
+      placeholderString = flowText("apps.capturePlaceholder")
     }
     onFocus?()
     return true
@@ -195,73 +198,63 @@ final class ShortcutCaptureField: NSTextField {
   }
 }
 
-final class SettingsTabButton: NSButton {
-  private let tabLabel: NSTextField
-  private let tabIcon: NSImageView
+final class SettingsNavigationButton: NSButton {
+  private let navigationLabel: NSTextField
+  private let navigationIcon: NSImageView
 
   var isSelectedTab = false {
     didSet { updateAppearance() }
   }
 
   init(title: String, symbolName: String) {
-    tabLabel = NSTextField(labelWithString: title)
-    tabIcon = NSImageView(
-      image: NSImage(systemSymbolName: symbolName, accessibilityDescription: title) ?? NSImage())
+    navigationLabel = NSTextField(labelWithString: title)
+    navigationIcon = NSImageView(
+      image: NSImage(systemSymbolName: symbolName, accessibilityDescription: nil) ?? NSImage())
     super.init(frame: .zero)
-
     self.title = ""
     isBordered = false
     setButtonType(.momentaryPushIn)
     wantsLayer = true
-    layer?.cornerRadius = 6
+    layer?.cornerRadius = 7
     setAccessibilityLabel(title)
-
-    tabLabel.font = NSFont.systemFont(ofSize: 12, weight: .medium)
-    tabLabel.alignment = .center
-    tabLabel.lineBreakMode = .byTruncatingTail
-    tabIcon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
-    tabIcon.setContentHuggingPriority(.required, for: .horizontal)
-
-    let content = NSStackView(views: [tabIcon, tabLabel])
+    navigationLabel.font = .systemFont(ofSize: 13)
+    navigationLabel.lineBreakMode = .byTruncatingTail
+    navigationLabel.setAccessibilityElement(false)
+    navigationIcon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
+    navigationIcon.setAccessibilityElement(false)
+    navigationIcon.widthAnchor.constraint(equalToConstant: 18).isActive = true
+    let content = NSStackView(views: [navigationIcon, navigationLabel])
     content.orientation = .horizontal
     content.alignment = .centerY
-    content.spacing = 7
+    content.spacing = 9
     content.translatesAutoresizingMaskIntoConstraints = false
     addSubview(content)
     NSLayoutConstraint.activate([
-      content.centerXAnchor.constraint(equalTo: centerXAnchor),
-      content.centerYAnchor.constraint(equalTo: centerYAnchor),
-      content.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 8),
+      content.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
       content.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -8),
-      heightAnchor.constraint(equalToConstant: 32),
+      content.centerYAnchor.constraint(equalTo: centerYAnchor),
+      heightAnchor.constraint(equalToConstant: 34),
     ])
     updateAppearance()
   }
 
-  required init?(coder: NSCoder) {
-    fatalError("init(coder:) has not been implemented")
-  }
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-  override func updateLayer() {
-    super.updateLayer()
+  override func viewDidChangeEffectiveAppearance() {
+    super.viewDidChangeEffectiveAppearance()
     updateAppearance()
   }
 
   private func updateAppearance() {
     guard let layer else { return }
+    setAccessibilityValue(isSelectedTab ? 1 : 0)
     effectiveAppearance.performAsCurrentDrawingAppearance {
-      let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-      layer.backgroundColor =
-        (isSelectedTab
-        ? NSColor.systemBlue.withAlphaComponent(isDark ? 0.2 : 0.12)
-        : NSColor.controlBackgroundColor.withAlphaComponent(isDark ? 0.55 : 0.72)).cgColor
-      layer.borderWidth = isSelectedTab ? 1 : 0
-      layer.borderColor =
-        (isSelectedTab
-        ? NSColor.systemBlue.withAlphaComponent(isDark ? 0.45 : 0.35)
-        : NSColor.separatorColor.withAlphaComponent(isDark ? 0.4 : 0.55)).cgColor
-      tabLabel.textColor = isSelectedTab ? .labelColor : .secondaryLabelColor
-      tabIcon.contentTintColor = isSelectedTab ? .systemBlue : .secondaryLabelColor
+      let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+      layer.backgroundColor = (isSelectedTab
+        ? NSColor.systemBlue.withAlphaComponent(dark ? 0.22 : 0.12) : .clear).cgColor
+      navigationLabel.textColor = isSelectedTab ? .labelColor : .secondaryLabelColor
+      navigationLabel.font = .systemFont(ofSize: 13, weight: isSelectedTab ? .medium : .regular)
+      navigationIcon.contentTintColor = isSelectedTab ? .systemBlue : .secondaryLabelColor
     }
   }
 }
