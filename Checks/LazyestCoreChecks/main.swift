@@ -472,6 +472,37 @@ check(
 check(
   !LidInputSourcePolicy.isKnownKorean(sourceIdentifier: nil), "Missing input source was guessed")
 
+// fdesetup(8) documents the isactive output / exit-code pairs. Neither
+// an unverified command nor FileVault off can establish automatic-login eligibility.
+check(
+  AutomaticLoginPolicy.fileVaultState(output: "true\n", exitCode: 0) == .on,
+  "FileVault on was not confirmed")
+check(
+  AutomaticLoginPolicy.fileVaultState(output: "false\n", exitCode: 1) == .off,
+  "Documented FileVault off result was not confirmed")
+for (output, code) in [
+  ("", Int32(0)), ("false", 0), ("true", 1), ("permission denied", 1),
+  ("true", 2), ("unknown", 0), ("false\nextra", 1),
+] {
+  check(
+    AutomaticLoginPolicy.fileVaultState(output: output, exitCode: code) == .unknown,
+    "Unverified FileVault output was trusted: \(output) / \(code)")
+}
+check(
+  AutomaticLoginPolicy.fileVaultState(output: "true", exitCode: 0, timedOut: true) == .unknown,
+  "Timed-out FileVault result was trusted")
+check(
+  AutomaticLoginPolicy.eligibility(fileVault: .on) == .blockedByFileVault,
+  "FileVault on did not block startup automatic login")
+check(
+  AutomaticLoginPolicy.eligibility(fileVault: .off) == .needsSystemSettingsReview,
+  "FileVault off bypassed account / management review")
+check(
+  AutomaticLoginPolicy.eligibility(fileVault: .unknown) == .unknown,
+  "Unknown FileVault state was presented as eligible")
+
+failures.append(contentsOf: loginSecurityFailures())
+
 if failures.isEmpty {
   print("LAZYEST_CORE_CHECKS_OK")
 } else {
