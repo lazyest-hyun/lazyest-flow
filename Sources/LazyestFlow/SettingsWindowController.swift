@@ -11,6 +11,18 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   private let keepAwakeStatusProvider: () -> KeepAwakeStatus
   private let automaticLoginStatusLabel = NSTextField(wrappingLabelWithString: "")
   private var automaticLoginQueryPending = false
+  private var loginSecuritySnapshot: LoginSecuritySnapshot?
+  private var loginSecuritySession = LoginSecurityChangeSession()
+  private let startupLoginChoice = NSPopUpButton()
+  private let wakeLoginChoice = NSPopUpButton()
+  private let startupLoginObservationLabel = NSTextField(wrappingLabelWithString: "")
+  private let wakeLoginObservationLabel = NSTextField(wrappingLabelWithString: "")
+  private lazy var reviewStartupLoginButton = actionButton(
+    title: flowText("login.reviewChange"), action: #selector(reviewStartupLoginChange))
+  private lazy var reviewWakeLoginButton = actionButton(
+    title: flowText("login.reviewChange"), action: #selector(reviewWakeLoginChange))
+  private lazy var applyLoginSecurityButton = actionButton(
+    title: flowText("login.apply"), action: #selector(applyLoginSecurityChange))
   private var rows: [BindingRow] = []
   private let bindingsStack = NSStackView()
   private let appsHintLabel = NSTextField(labelWithString: flowText("apps.hint"))
@@ -887,11 +899,34 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     automaticLoginStatusLabel.font = .systemFont(ofSize: 12)
     automaticLoginStatusLabel.setContentCompressionResistancePriority(.required, for: .vertical)
     automaticLoginStatusLabel.stringValue = flowText("login.status.unknown")
+    startupLoginObservationLabel.stringValue = flowText("login.current.unknown")
+    wakeLoginObservationLabel.stringValue = flowText("login.current.unknown")
+    startupLoginChoice.addItems(withTitles: [
+      flowText("login.choose"), flowText("login.choice.startupOff"),
+      flowText("login.choice.startupCurrent"),
+    ])
+    wakeLoginChoice.addItems(withTitles: [
+      flowText("login.choose"), flowText("login.choice.immediate"),
+      flowText("login.choice.fiveSeconds"), flowText("login.choice.oneMinute"),
+      flowText("login.choice.fiveMinutes"), flowText("login.choice.off"),
+    ])
+    for popup in [startupLoginChoice, wakeLoginChoice] {
+      popup.target = self
+      popup.action = #selector(loginSecurityChoiceChanged)
+      popup.widthAnchor.constraint(equalToConstant: 180).isActive = true
+    }
+    reviewStartupLoginButton.isEnabled = false
+    reviewWakeLoginButton.isEnabled = false
+    applyLoginSecurityButton.isEnabled = false
     root.addArrangedSubview(
       settingsGroup(
         reserveTitle: true,
         rows: [
           automaticLoginNote(flowText("login.physicalAccess")),
+          automaticLoginNote(flowText("login.directGate")),
+          settingRow(title: flowText("login.requestedStartup"), control: startupLoginChoice),
+          automaticLoginNoteRow(startupLoginObservationLabel),
+          settingRow(title: flowText("login.changePlan"), control: reviewStartupLoginButton),
           settingRow(
             title: flowText("login.startup"),
             control: actionButton(
@@ -909,6 +944,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         title: flowText("login.wake"),
         rows: [
           automaticLoginNote(flowText("login.wakeDetail")),
+          settingRow(title: flowText("login.requestedWake"), control: wakeLoginChoice),
+          automaticLoginNoteRow(wakeLoginObservationLabel),
+          settingRow(title: flowText("login.changePlan"), control: reviewWakeLoginButton),
           settingRow(
             title: flowText("login.wakeRoute"),
             control: actionButton(
@@ -919,6 +957,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         title: flowText("login.before"),
         rows: [
           automaticLoginNote(flowText("login.handoff")),
+          settingRow(title: flowText("login.directGateShort"), control: applyLoginSecurityButton),
           settingRow(
             title: flowText("login.appleGuide"),
             control: actionButton(
@@ -948,10 +987,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   @objc private func refreshAutomaticLoginStatus() {
     guard !isPreview, !automaticLoginQueryPending else { return }
     automaticLoginQueryPending = true
+    loginSecuritySnapshot = nil
+    loginSecuritySession.cancel()
+    updateLoginSecurityChoices()
+    startupLoginObservationLabel.stringValue = flowText("login.current.checking")
+    wakeLoginObservationLabel.stringValue = flowText("login.current.checking")
     automaticLoginStatusLabel.stringValue = flowText("login.status.checking")
     AutomaticLoginSupport.queryFileVault { [weak self] fileVault in
       guard let self else { return }
-      self.automaticLoginQueryPending = false
       let key: String
       switch AutomaticLoginPolicy.eligibility(fileVault: fileVault) {
       case .blockedByFileVault: key = "login.status.blocked"
@@ -959,7 +1002,154 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
       case .unknown: key = "login.status.unknown"
       }
       self.automaticLoginStatusLabel.stringValue = flowText(key)
+      LoginSecurityStatusReader.query(fileVault: fileVault) { [weak self] snapshot in
+        guard let self else { return }
+        self.automaticLoginQueryPending = false
+        self.loginSecuritySnapshot = snapshot
+        self.startupLoginObservationLabel.stringValue = self.startupObservationText(
+          snapshot.startup)
+        self.wakeLoginObservationLabel.stringValue = self.wakeObservationText(snapshot.wake)
+        self.updateLoginSecurityChoices()
+      }
     }
+  }
+
+  private func selectedStartupAction() -> LoginSecurityAction? {
+    switch startupLoginChoice.indexOfSelectedItem {
+    case 1: return .startupOff
+    case 2: return .startupCurrentUser
+    default: return nil
+    }
+  }
+
+  private func selectedWakeAction() -> LoginSecurityAction? {
+    let index = wakeLoginChoice.indexOfSelectedItem - 1
+    guard WakePasswordDelay.allCases.indices.contains(index) else { return nil }
+    return .wake(WakePasswordDelay.allCases[index])
+  }
+
+  @objc private func loginSecurityChoiceChanged() {
+    loginSecuritySession.cancel()
+    updateLoginSecurityChoices()
+  }
+
+  private func updateLoginSecurityChoices() {
+    guard !isPreview, let snapshot = loginSecuritySnapshot else {
+      reviewStartupLoginButton.isEnabled = false
+      reviewWakeLoginButton.isEnabled = false
+      return
+    }
+    reviewStartupLoginButton.isEnabled =
+      selectedStartupAction().flatMap {
+        LoginSecurityCommandPlan.make(action: $0, snapshot: snapshot)
+      } != nil
+    reviewWakeLoginButton.isEnabled =
+      selectedWakeAction().flatMap {
+        LoginSecurityCommandPlan.make(action: $0, snapshot: snapshot)
+      } != nil
+    // No real apply is offered until per-action OS-owned authentication and
+    // account-password transport are verified. Selection is never persistence.
+    applyLoginSecurityButton.isEnabled = false
+  }
+
+  private func startupObservationText(_ observed: StartupLoginObservation) -> String {
+    switch observed {
+    case .off: return flowText("login.current.startupOff")
+    case .user(let name): return flowText("login.current.startupUser") + " " + name
+    case .blockedByFileVault: return flowText("login.status.blocked")
+    case .unknown: return flowText("login.current.unknown")
+    }
+  }
+
+  private func wakeObservationText(_ observed: WakeLoginObservation) -> String {
+    switch observed {
+    case .off: return flowText("login.current.wakeOff")
+    case .seconds(0): return flowText("login.current.wakeImmediate")
+    case .seconds(let seconds): return flowText("login.current.wakeSeconds") + " \(seconds)"
+    case .unknown: return flowText("login.current.unknown")
+    }
+  }
+
+  @objc private func reviewStartupLoginChange() {
+    reviewLoginSecurityChange(selectedStartupAction())
+  }
+  @objc private func reviewWakeLoginChange() { reviewLoginSecurityChange(selectedWakeAction()) }
+
+  private func reviewLoginSecurityChange(_ action: LoginSecurityAction?) {
+    guard !isPreview, let action, let snapshot = loginSecuritySnapshot else { return }
+    loginSecuritySession.choose(action, snapshot: snapshot)
+    guard let plan = loginSecuritySession.plan else { return }
+    statusLabel.stringValue = flowText("login.phase.confirm")
+    let alert = NSAlert()
+    alert.messageText = flowText("login.confirmTitle")
+    let before: String
+    let after: String
+    switch action {
+    case .startupOff:
+      before = startupObservationText(snapshot.startup)
+      after = flowText("login.choice.startupOff")
+    case .startupCurrentUser:
+      before = startupObservationText(snapshot.startup)
+      after = flowText("login.choice.startupCurrent")
+    case .wake(let delay):
+      before = wakeObservationText(snapshot.wake)
+      after = wakeLoginChoice.titleOfSelectedItem ?? delay.rawValue
+    }
+    alert.informativeText =
+      "\(flowText("login.account")): \(plan.identity.userName)\n\(before)\n\(flowText("login.requested")): \(after)\n\n\(flowText("login.physicalAccess"))\n\n\(flowText("login.directGate"))"
+    alert.addButton(withTitle: flowText("login.confirmPlan"))
+    alert.addButton(withTitle: flowText("apps.cancel"))
+    guard alert.runModal() == .alertFirstButtonReturn else {
+      loginSecuritySession.cancel()
+      updateLoginSecurityPhase(.cancelled)
+      return
+    }
+    // This only exercises the explicit production gate; it cannot prompt or write.
+    applyLoginSecurityChange()
+  }
+
+  @objc private func applyLoginSecurityChange() {
+    guard !isPreview, let snapshot = loginSecuritySnapshot else { return }
+    let runner = GatedLoginSecurityRunner { [weak self] in
+      guard let self, LoginSecurityStatusReader.consoleIdentity() == snapshot.identity else {
+        return LoginSecuritySnapshot(
+          identity: nil, capabilities: .unknown, fileVault: .unknown,
+          startup: .unknown, wake: .unknown)
+      }
+      return self.loginSecuritySnapshot
+        ?? LoginSecuritySnapshot(
+          identity: nil, capabilities: .unknown,
+          fileVault: .unknown, startup: .unknown, wake: .unknown)
+    }
+    loginSecuritySession.confirm(using: runner) { [weak self] phase in
+      self?.updateLoginSecurityPhase(phase)
+    }
+    if let observed = loginSecuritySession.lastObservation {
+      loginSecuritySnapshot = observed
+      startupLoginObservationLabel.stringValue = startupObservationText(observed.startup)
+      wakeLoginObservationLabel.stringValue = wakeObservationText(observed.wake)
+    }
+  }
+
+  private func updateLoginSecurityPhase(_ phase: LoginSecurityPhase) {
+    let key: String
+    switch phase {
+    case .idle: key = "login.phase.idle"
+    case .awaitingConfirmation: key = "login.phase.confirm"
+    case .authenticating: key = "login.phase.auth"
+    case .applying: key = "login.phase.applying"
+    case .verifying: key = "login.phase.readback"
+    case .applied: key = "login.phase.applied"
+    case .cancelled: key = "login.phase.cancelled"
+    case .failed(.authenticationTransportUnverified): key = "login.directGateShort"
+    case .failed(.contextChanged): key = "login.phase.changed"
+    case .failed(.unsupported): key = "login.phase.unsupported"
+    case .failed(.denied): key = "login.phase.denied"
+    case .failed(.outcomeUnknown): key = "login.phase.unknown"
+    case .failed(.readbackMismatch): key = "login.phase.mismatch"
+    case .failed(.commandFailed): key = "login.phase.failed"
+    }
+    statusLabel.stringValue = flowText(key)
   }
 
   @objc private func openAutomaticLoginSettings() {
@@ -1134,6 +1324,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   func renderPreviews(to directory: URL) throws {
     guard isPreview, let window, let contentView = window.contentView else { return }
     try validatePreviewNavigation()
+    guard !applyLoginSecurityButton.isEnabled, !reviewStartupLoginButton.isEnabled,
+      !reviewWakeLoginButton.isEnabled, startupLoginChoice.numberOfItems == 3,
+      wakeLoginChoice.numberOfItems == 6 else {
+      throw NSError(domain: "FlowPreview", code: 8, userInfo: [NSLocalizedDescriptionKey:
+        "Prepared login controls must not enable the production mutation driver"])
+    }
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let names = ["general", "shortcuts", "input-devices", "screenshots", "keep-awake", "dock", "automatic-login"]
     var layouts: [[String: Any]] = []

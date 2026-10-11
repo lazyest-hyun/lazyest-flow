@@ -501,6 +501,8 @@ check(
   AutomaticLoginPolicy.eligibility(fileVault: .unknown) == .unknown,
   "Unknown FileVault state was presented as eligible")
 
+failures.append(contentsOf: loginSecurityFailures())
+
 if failures.isEmpty {
   print("LAZYEST_CORE_CHECKS_OK")
 } else {
