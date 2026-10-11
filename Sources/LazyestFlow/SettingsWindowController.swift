@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 import Foundation
+import LazyestCore
 
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   private let isPreview: Bool
@@ -8,6 +9,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   private let screenshotStatusProvider: () -> Bool
   private let dockPinStatusProvider: () -> DockPinStatus
   private let keepAwakeStatusProvider: () -> KeepAwakeStatus
+  private let automaticLoginStatusLabel = NSTextField(wrappingLabelWithString: "")
+  private var automaticLoginQueryPending = false
   private var rows: [BindingRow] = []
   private let bindingsStack = NSStackView()
   private let appsHintLabel = NSTextField(labelWithString: flowText("apps.hint"))
@@ -132,6 +135,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
     observers = [
       NotificationCenter.default.addObserver(
+        forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+      ) { [weak self] _ in
+        guard let self,
+          self.settingsTabs.selectedTabViewItem?.identifier as? String == "automatic-login"
+        else { return }
+        self.refreshAutomaticLoginStatus()
+      },
+      NotificationCenter.default.addObserver(
         forName: dockPinStatusNotification, object: nil, queue: .main
       ) { [weak self] note in
         self?.refreshDockPinUI(status: note.object as? DockPinStatus)
@@ -204,7 +215,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     let definitions: [(Int, String, String)] = [
       (1, "tab.apps", "command"), (2, "tab.inputDevices", "keyboard"),
       (3, "tab.screenshots", "camera.viewfinder"), (5, "tab.dockPin", "dock.rectangle"),
-      (4, "tab.keepAwake", "moon"), (0, "tab.general", "gearshape"),
+      (4, "tab.keepAwake", "moon"), (6, "tab.automaticLogin", "person.crop.circle"),
+      (0, "tab.general", "gearshape"),
     ]
     for (position, definition) in definitions.enumerated() {
       if position == 0 || position == 2 || position == 4 {
@@ -236,7 +248,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     contentView.addSubview(divider)
     settingsTabs.tabViewType = .noTabsNoBorder
     settingsTabs.translatesAutoresizingMaskIntoConstraints = false
-    for page in [generalTab(), appBindingsTab(), inputDevicesTab(), screenshotsTab(), keepAwakeTab(), dockPinTab()] {
+    for page in [generalTab(), appBindingsTab(), inputDevicesTab(), screenshotsTab(), keepAwakeTab(), dockPinTab(), automaticLoginTab()] {
       settingsTabs.addTabViewItem(page)
     }
     detail.addSubview(settingsTabs)
@@ -293,6 +305,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     guard settingsTabs.tabViewItems.indices.contains(index) else { return }
     cancelShortcutEditing()
     settingsTabs.selectTabViewItem(at: index)
+    if index == 6, !isPreview { refreshAutomaticLoginStatus() }
     for button in tabButtons { button.isSelectedTab = button.tag == index }
     if !isPreview, let identifier = settingsTabs.selectedTabViewItem?.identifier as? String {
       UserDefaults.standard.set(identifier, forKey: Self.selectedPageKey)
@@ -867,6 +880,102 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     return controls
   }
 
+  private func automaticLoginTab() -> NSTabViewItem {
+    let item = NSTabViewItem(identifier: "automatic-login")
+    item.label = flowText("tab.automaticLogin")
+    let root = settingsPage(title: flowText("login.title"), detail: flowText("login.detail"))
+    automaticLoginStatusLabel.font = .systemFont(ofSize: 12)
+    automaticLoginStatusLabel.setContentCompressionResistancePriority(.required, for: .vertical)
+    automaticLoginStatusLabel.stringValue = flowText("login.status.unknown")
+    root.addArrangedSubview(
+      settingsGroup(
+        reserveTitle: true,
+        rows: [
+          automaticLoginNote(flowText("login.physicalAccess")),
+          settingRow(
+            title: flowText("login.startup"),
+            control: actionButton(
+              title: flowText("login.openSettings"), action: #selector(openAutomaticLoginSettings))),
+          automaticLoginNote(flowText("login.startupRoute")),
+          automaticLoginNoteRow(automaticLoginStatusLabel),
+          automaticLoginNote(flowText("login.restrictions")),
+          settingRow(
+            title: flowText("login.refresh"),
+            control: actionButton(
+              title: flowText("footer.reload"), action: #selector(refreshAutomaticLoginStatus))),
+        ]))
+    root.addArrangedSubview(
+      settingsGroup(
+        title: flowText("login.wake"),
+        rows: [
+          automaticLoginNote(flowText("login.wakeDetail")),
+          settingRow(
+            title: flowText("login.wakeRoute"),
+            control: actionButton(
+              title: flowText("login.openSettings"), action: #selector(openAutomaticLoginSettings))),
+        ]))
+    root.addArrangedSubview(
+      settingsGroup(
+        title: flowText("login.before"),
+        rows: [
+          automaticLoginNote(flowText("login.handoff")),
+          settingRow(
+            title: flowText("login.appleGuide"),
+            control: actionButton(
+              title: flowText("login.readGuide"), action: #selector(openAutomaticLoginGuide))),
+        ]))
+    item.view = scrollableTabView(content: root)
+    return item
+  }
+
+  private func automaticLoginNote(_ text: String) -> NSView {
+    let label = NSTextField(wrappingLabelWithString: text)
+    label.font = .systemFont(ofSize: 12)
+    label.textColor = .secondaryLabelColor
+    label.setContentCompressionResistancePriority(.required, for: .vertical)
+    return automaticLoginNoteRow(label)
+  }
+
+  private func automaticLoginNoteRow(_ label: NSTextField) -> NSView {
+    let row = NSStackView(views: [label])
+    row.orientation = .vertical
+    row.alignment = .width
+    row.edgeInsets = NSEdgeInsets(top: 8, left: 0, bottom: 8, right: 0)
+    label.widthAnchor.constraint(equalTo: row.widthAnchor).isActive = true
+    return row
+  }
+
+  @objc private func refreshAutomaticLoginStatus() {
+    guard !isPreview, !automaticLoginQueryPending else { return }
+    automaticLoginQueryPending = true
+    automaticLoginStatusLabel.stringValue = flowText("login.status.checking")
+    AutomaticLoginSupport.queryFileVault { [weak self] fileVault in
+      guard let self else { return }
+      self.automaticLoginQueryPending = false
+      let key: String
+      switch AutomaticLoginPolicy.eligibility(fileVault: fileVault) {
+      case .blockedByFileVault: key = "login.status.blocked"
+      case .needsSystemSettingsReview: key = "login.status.review"
+      case .unknown: key = "login.status.unknown"
+      }
+      self.automaticLoginStatusLabel.stringValue = flowText(key)
+    }
+  }
+
+  @objc private func openAutomaticLoginSettings() {
+    guard !isPreview else { return }
+    AutomaticLoginSupport.openSystemSettings { [weak self] opened in
+      self?.statusLabel.stringValue = flowText(
+        opened ? "login.settingsRoute" : "login.settingsFailed")
+    }
+  }
+
+  @objc private func openAutomaticLoginGuide() {
+    guard !isPreview else { return }
+    let url = URL(string: "https://support.apple.com/102316")!
+    if !NSWorkspace.shared.open(url) { statusLabel.stringValue = flowText("login.guideFailed") }
+  }
+
   private func generalTab() -> NSTabViewItem {
     let item = NSTabViewItem(identifier: "general")
     item.label = flowText("tab.general")
@@ -1026,7 +1135,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     guard isPreview, let window, let contentView = window.contentView else { return }
     try validatePreviewNavigation()
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    let names = ["general", "shortcuts", "input-devices", "screenshots", "keep-awake", "dock"]
+    let names = ["general", "shortcuts", "input-devices", "screenshots", "keep-awake", "dock", "automatic-login"]
     var layouts: [[String: Any]] = []
     for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
       window.appearance = NSAppearance(named: appearanceName)

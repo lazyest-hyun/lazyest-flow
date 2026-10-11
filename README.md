@@ -135,6 +135,20 @@ LAZYEST_NOTARY_PROFILE="lazyest-notary" \
 
 `--preflight`를 붙이면 준비 상태만 확인합니다. 완료 시 `dist/Lazyest-Flow-<version>-macOS.pkg`와 SHA-256 파일이 생성됩니다. 이 명령은 GitHub에 게시하거나 App Store에 제출하지 않습니다. 소스 빌드 성공과 Apple 서명, 공증, 실제 사용 검증은 각각 확인해야 합니다.
 
+## 로그인 편의 설정
+
+Flow의 **로그인 편의 설정**에서 Mac 시작 시 자동 로그인과 잠자기·화면 보호기 후 암호 요구 설정을 각각 안내합니다. **로그인 시 자동 실행**은 로그인한 뒤 Flow를 실행하는 기존 기능입니다.
+
+- 시작 시 자동 로그인: 시스템 설정 → 사용자 및 그룹 → 다음으로 자동 로그인.
+- 잠자기·화면 보호기 후 암호 요구 시간: 시스템 설정 → 잠금 화면.
+- Flow는 시스템 설정 앱을 열고 이동 경로를 안내합니다. 공개 API로 보장되지 않는 개별 화면 링크는 사용하지 않습니다. 앱을 열지 못하면 Apple 메뉴에서 직접 여는 경로를 표시합니다.
+- FileVault 상태만 `/usr/bin/fdesetup isactive`로 관리자 권한 없이 조회합니다. 설치된 Apple `fdesetup(8)` 매뉴얼의 `true`/종료 코드 0, `false`/종료 코드 1 조합만 확인된 상태로 취급합니다. 실행 실패, 권한 거부, 예상 밖 출력, 3초 시간 초과는 **확인할 수 없음**입니다.
+- FileVault가 꺼져 있어도 자동 로그인 가능 여부나 적용 상태를 확정하지 않습니다. 조직의 관리 정책과 Apple 계정 암호 사용 등 나머지 조건은 시스템 설정에서 확인해야 합니다.
+
+암호 없이 접근하도록 설정하면 이 Mac을 사용할 수 있는 다른 사람도 계정의 파일과 앱에 접근할 수 있습니다. 실제 변경과 인증은 사용자가 macOS에서 직접 진행합니다. Flow는 FileVault·계정·암호·잠금 설정을 변경하거나 로그인 암호를 읽고 저장하지 않습니다. FileVault로 암호화된 Mac의 전원을 켤 때는 인증이 필요합니다. 시작 시 자동 로그인은 로그아웃·사용자 전환·수동 잠금에 적용되지 않습니다.
+
+기준: [Apple 자동 로그인 안내](https://support.apple.com/ko-kr/102316). 순수 상태 판단은 `LazyestCore/AutomaticLoginPolicy.swift`, macOS 조회·설정 앱 열기는 `AutomaticLoginSupport.swift`에 분리해 두었습니다.
+
 ## 보안 및 라이선스
 
 취약점은 [보안 정책](SECURITY.md)의 비공개 제보 경로를 이용해 주세요. [The Unlicense](UNLICENSE)를 따릅니다.

@@ -67,6 +67,33 @@ func flowLanguage() -> FlowLanguage {
 }
 
 private let koreanAgentStrings: [String: String] = [
+  "tab.automaticLogin": "로그인 편의 설정",
+  "login.title": "로그인 편의 설정",
+  "login.detail": "Mac을 켤 때와 잠자기에서 깨어날 때의 로그인 방식을 각각 확인하세요.",
+  "login.startup": "Mac 시작 시 자동 로그인",
+  "login.openSettings": "시스템 설정 열기",
+  "login.startupRoute": "시스템 설정 → 사용자 및 그룹 → 다음으로 자동 로그인. macOS에서 계정을 선택하고 필요한 인증을 직접 진행하세요.",
+  "login.restrictions":
+    "FileVault가 켜져 있거나 조직의 관리 정책 또는 Apple 계정 암호 사용으로 제한된 경우 자동 로그인을 설정할 수 없습니다. Flow는 현재 자동 로그인 여부와 모든 계정·관리 조건을 확인할 수 없습니다.",
+  "login.refresh": "FileVault 상태 다시 확인",
+  "login.wake": "잠자기에서 깨어날 때",
+  "login.wakeDetail":
+    "시작 시 자동 로그인과 별도 설정입니다. 잠자기·화면 보호기 후 암호 요구 시간은 잠금 화면에서 확인하세요. 로그아웃·사용자 전환·수동 잠금에도 시작 시 자동 로그인이 적용되지 않습니다. iPhone 미러링 자동 인증 때문에 암호 요구 시간을 바꾸지 못할 수도 있습니다.",
+  "login.wakeRoute": "시스템 설정 → 잠금 화면",
+  "login.before": "설정하기 전에",
+  "login.physicalAccess": "암호 없이 접근하도록 설정하면 이 Mac을 사용할 수 있는 다른 사람도 계정의 파일과 앱에 접근할 수 있습니다.",
+  "login.handoff":
+    "Flow는 안내와 상태 확인만 제공합니다. 실제 변경은 시스템 설정에서 직접 결정하고 인증하세요. FileVault로 암호화된 Mac의 전원을 켤 때는 인증이 필요합니다.",
+  "login.appleGuide": "Apple의 자동 로그인 안내",
+  "login.readGuide": "안내 보기",
+  "login.status.unknown": "FileVault 상태: 확인할 수 없음. 자동 로그인 가능 여부와 현재 설정은 시스템 설정에서 확인하세요.",
+  "login.status.checking": "FileVault 상태 확인 중…",
+  "login.status.blocked": "FileVault: 켜짐. 시작 시 자동 로그인을 사용할 수 없습니다. 잠금 화면 설정은 별도로 확인할 수 있습니다.",
+  "login.status.review":
+    "FileVault: 꺼짐. 이 정보만으로 자동 로그인이 가능하다고 판단할 수 없습니다. 계정·관리 제한과 현재 설정은 시스템 설정에서 확인하세요.",
+  "login.settingsRoute": "시스템 설정에서 사용자 및 그룹 또는 잠금 화면으로 이동하세요.",
+  "login.settingsFailed": "시스템 설정을 열지 못했습니다. Apple 메뉴에서 시스템 설정을 연 뒤 사용자 및 그룹 또는 잠금 화면으로 이동하세요.",
+  "login.guideFailed": "안내를 열지 못했습니다. support.apple.com/102316에서 확인하세요.",
   "title": "Lazyest Flow",
   "nav.work": "작업",
   "nav.screen": "화면",
@@ -256,6 +283,38 @@ private let koreanAgentStrings: [String: String] = [
 ]
 
 private let englishAgentStrings: [String: String] = [
+  "tab.automaticLogin": "Login options",
+  "login.title": "Login convenience",
+  "login.detail": "Review startup login and waking from sleep separately.",
+  "login.startup": "Automatic login at startup",
+  "login.openSettings": "Open System Settings",
+  "login.startupRoute":
+    "System Settings → Users & Groups → Automatically log in as. Choose an account and complete any required authentication in macOS yourself.",
+  "login.restrictions":
+    "Automatic login is unavailable with FileVault, a prohibiting management policy, or an Apple Account login password. Flow cannot verify the current automatic login setting or all account and management restrictions.",
+  "login.refresh": "Check FileVault again",
+  "login.wake": "Waking from sleep",
+  "login.wakeDetail":
+    "This is separate from startup automatic login. Review the password delay after sleep or a screen saver in Lock Screen. Startup automatic login also does not apply to logout, user switching, or manual locking. Automatic iPhone Mirroring authentication may prevent changing the password delay.",
+  "login.wakeRoute": "System Settings → Lock Screen",
+  "login.before": "Before changing settings",
+  "login.physicalAccess":
+    "Allowing access without a password means anyone who can use this Mac may also access the account’s files and apps.",
+  "login.handoff":
+    "Flow only provides guidance and a status check. Decide and authenticate any actual change yourself in System Settings. Starting a FileVault-encrypted Mac still requires authentication.",
+  "login.appleGuide": "Apple’s automatic login guide",
+  "login.readGuide": "Read guide",
+  "login.status.unknown":
+    "FileVault: unknown. Check automatic login availability and the current setting in System Settings.",
+  "login.status.checking": "Checking FileVault…",
+  "login.status.blocked":
+    "FileVault: on. Startup automatic login is unavailable. You can review Lock Screen settings separately.",
+  "login.status.review":
+    "FileVault: off. This alone does not confirm eligibility. Review account and management restrictions and the current setting in System Settings.",
+  "login.settingsRoute": "In System Settings, select Users & Groups or Lock Screen.",
+  "login.settingsFailed":
+    "Could not open System Settings. Open it from the Apple menu, then select Users & Groups or Lock Screen.",
+  "login.guideFailed": "Could not open the guide. Visit support.apple.com/102316.",
   "title": "Lazyest Flow",
   "nav.work": "WORK",
   "nav.screen": "DISPLAY",
