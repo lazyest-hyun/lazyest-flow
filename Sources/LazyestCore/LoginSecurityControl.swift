@@ -31,23 +31,28 @@ public struct LoginConsoleIdentity: Equatable {
 public struct LoginToolCapabilities: Equatable {
   public let startup: Bool
   public let wake: Bool
+  public let startupPasswordPrompt: Bool
+  public let wakePasswordPrompt: Bool
 
-  public static let unknown = LoginToolCapabilities(startup: false, wake: false)
+  public static let unknown = LoginToolCapabilities(
+    startup: false, wake: false, startupPasswordPrompt: false, wakePasswordPrompt: false)
 
   public static func detect(help: String, exitCode: Int32, timedOut: Bool = false)
     -> LoginToolCapabilities
   {
     guard exitCode == 0, !timedOut, help.utf8.count <= 32_768,
-      help.contains("Usage: sysadminctl"), help.contains("'interactive'"),
+      help.contains("Usage: sysadminctl"),
       !help.contains("### Error"), !help.contains("Error:")
     else { return .unknown }
+    let startup = help.contains(
+      "-autologin set -userName <user name> [-password <user password>] || off || status (interactive || -adminUser <administrator user name> -adminPassword <administrator password>)"
+    )
+    let wake = help.contains(
+      "-screenLock <status || immediate || off || seconds> -password <password>")
+    let prompt = help.contains("Pass '-' instead of password in commands above to request prompt.")
     return LoginToolCapabilities(
-      startup: help.contains(
-        "-autologin set -userName <user name> [-password <user password>] || off || status (interactive || -adminUser <administrator user name> -adminPassword <administrator password>)"
-      ),
-      wake: help.contains(
-        "-screenLock <status || immediate || off || seconds> -password <password>")
-        && help.contains("Pass '-' instead of password"))
+      startup: startup, wake: wake,
+      startupPasswordPrompt: startup && prompt, wakePasswordPrompt: wake && prompt)
   }
 }
 
@@ -142,6 +147,81 @@ public struct LoginSecuritySnapshot: Equatable {
   }
 }
 
+/// The acting console identity is separate from the account affected by the
+/// machine-wide startup-off command, which has no username argument.
+public enum LoginSecurityAffectedAccount: Equatable {
+  case machineAutomaticLogin(StartupLoginObservation)
+  case account(String)
+}
+
+public struct LoginSecurityConfirmationScope: Equatable {
+  public let actingUser: LoginConsoleIdentity
+  public let affected: LoginSecurityAffectedAccount
+
+  public init(
+    action: LoginSecurityAction, snapshot: LoginSecuritySnapshot, actor: LoginConsoleIdentity
+  ) {
+    actingUser = actor
+    switch action {
+    case .startupOff: affected = .machineAutomaticLogin(snapshot.startup)
+    case .startupCurrentUser, .wake: affected = .account(actor.userName)
+    }
+  }
+}
+
+/// Closed, read-only commands shared by the fresh provider and OS adapter.
+public enum LoginSecurityReadCommand: CaseIterable {
+  case help
+  case startupStatus
+  case wakeStatus
+  case fileVaultStatus
+
+  public var executable: String {
+    self == .fileVaultStatus ? "/usr/bin/fdesetup" : "/usr/sbin/sysadminctl"
+  }
+
+  public var arguments: [String] {
+    switch self {
+    case .help: return ["-help"]
+    case .startupStatus: return ["-autologin", "status"]
+    case .wakeStatus: return ["-screenLock", "status"]
+    case .fileVaultStatus: return ["isactive"]
+    }
+  }
+}
+
+public protocol LoginSecuritySnapshotSource {
+  func consoleIdentity() -> LoginConsoleIdentity?
+  func read(_ command: LoginSecurityReadCommand) -> LoginToolResult
+}
+
+public enum LoginSecuritySnapshotProvider {
+  /// Never reuses a UI snapshot. Each invocation performs new OS reads and
+  /// validates the console identity at both ends of the observation interval.
+  public static func freshSnapshot(using source: LoginSecuritySnapshotSource)
+    -> LoginSecuritySnapshot
+  {
+    let originalIdentity = source.consoleIdentity()
+    let help = source.read(.help)
+    let capabilities = LoginToolCapabilities.detect(
+      help: help.stdout + help.stderr,
+      exitCode: help.exitCode, timedOut: help.timedOut)
+    let vault = source.read(.fileVaultStatus)
+    let fileVault =
+      vault.stderr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      ? AutomaticLoginPolicy.fileVaultState(
+        output: vault.stdout, exitCode: vault.exitCode, timedOut: vault.timedOut)
+      : .unknown
+    let startup =
+      capabilities.startup ? LoginToolStatusParser.startup(source.read(.startupStatus)) : .unknown
+    let wake = capabilities.wake ? LoginToolStatusParser.wake(source.read(.wakeStatus)) : .unknown
+    let identity = source.consoleIdentity()
+    return LoginSecuritySnapshot(
+      identity: identity == originalIdentity ? identity : nil,
+      capabilities: capabilities, fileVault: fileVault, startup: startup, wake: wake)
+  }
+}
+
 public struct LoginSecurityCommandPlan: Equatable {
   public let action: LoginSecurityAction
   public let identity: LoginConsoleIdentity
@@ -164,7 +244,7 @@ public struct LoginSecurityCommandPlan: Equatable {
       return Self(
         action: action, identity: identity, arguments: ["interactive", "-autologin", "off"])
     case .startupCurrentUser:
-      guard snapshot.capabilities.startup, snapshot.fileVault == .off,
+      guard snapshot.capabilities.startupPasswordPrompt, snapshot.fileVault == .off,
         snapshot.startup != .blockedByFileVault
       else { return nil }
       return Self(
@@ -173,7 +253,7 @@ public struct LoginSecurityCommandPlan: Equatable {
           "interactive", "-autologin", "set", "-userName", identity.userName, "-password", "-",
         ])
     case .wake(let delay):
-      guard snapshot.capabilities.wake else { return nil }
+      guard snapshot.capabilities.wakePasswordPrompt else { return nil }
       return Self(
         action: action, identity: identity,
         arguments: ["interactive", "-screenLock", delay.rawValue, "-password", "-"])

@@ -67,6 +67,11 @@ func flowLanguage() -> FlowLanguage {
 }
 
 private let koreanAgentStrings: [String: String] = [
+  "login.actingUser": "작업 사용자(현재 콘솔)",
+  "login.affectedAccount": "영향받는 계정",
+  "login.machineScope": "영향 범위: 이 Mac 전체의 시작 시 자동 로그인",
+  "login.affectedNone": "없음 — 현재 자동 로그인 꺼짐",
+  "login.affectedUnknown": "확인할 수 없음",
   "login.reviewChange": "변경 계획 확인…",
   "login.apply": "실제 적용",
   "login.choose": "변경할 값 선택",
@@ -78,7 +83,7 @@ private let koreanAgentStrings: [String: String] = [
   "login.choice.fiveMinutes": "5분 후 암호 요구",
   "login.choice.off": "암호 요구 안 함",
   "login.requestedStartup": "시작 시 변경할 값",
-  "login.requestedWake": "잠금 후 변경할 값",
+  "login.requestedWake": "잠자기·화면 보호기·화면 꺼짐 후 암호",
   "login.changePlan": "선택한 변경 검토",
   "login.directGate":
     "직접 변경 기능을 준비 중입니다. macOS 명령은 확인했지만, 시스템 인증과 계정 암호 입력 방식은 아직 검증하지 못해 실제 적용을 차단했습니다. 아래 선택과 확인은 설정을 바꾸지 않습니다.",
@@ -87,11 +92,10 @@ private let koreanAgentStrings: [String: String] = [
   "login.current.checking": "현재 설정 확인 중…",
   "login.current.startupOff": "현재 시작 시 자동 로그인: 꺼짐",
   "login.current.startupUser": "현재 자동 로그인 계정:",
-  "login.current.wakeOff": "현재 잠금 후 암호 요구: 꺼짐",
-  "login.current.wakeImmediate": "현재 잠금 후 암호 요구: 즉시",
-  "login.current.wakeSeconds": "현재 잠금 후 암호 요구 시간(초):",
+  "login.current.wakeOff": "현재 잠자기·화면 보호기·화면 꺼짐 후 암호 요구: 꺼짐",
+  "login.current.wakeImmediate": "현재 잠자기·화면 보호기·화면 꺼짐 후 암호 요구: 즉시",
+  "login.current.wakeSeconds": "현재 잠자기·화면 보호기·화면 꺼짐 후 암호 요구 시간(초):",
   "login.confirmTitle": "로그인 설정 변경 계획",
-  "login.account": "대상 계정",
   "login.requested": "요청한 값",
   "login.confirmPlan": "계획 확인",
   "login.phase.idle": "변경할 값을 선택하세요.",
@@ -109,16 +113,16 @@ private let koreanAgentStrings: [String: String] = [
   "login.phase.failed": "변경 명령이 실패했습니다. 현재 설정을 다시 확인하세요.",
   "tab.automaticLogin": "로그인 편의 설정",
   "login.title": "로그인 편의 설정",
-  "login.detail": "Mac을 켤 때와 잠자기에서 깨어날 때의 로그인 방식을 각각 확인하세요.",
+  "login.detail": "Mac을 켤 때와 잠자기·화면 보호기·화면 꺼짐의 로그인 방식을 각각 확인하세요.",
   "login.startup": "Mac 시작 시 자동 로그인",
   "login.openSettings": "시스템 설정 열기",
   "login.startupRoute": "시스템 설정 → 사용자 및 그룹 → 다음으로 자동 로그인. macOS에서 계정을 선택하고 필요한 인증을 직접 진행하세요.",
   "login.restrictions":
     "FileVault가 켜져 있거나 조직의 관리 정책 또는 Apple 계정 암호 사용으로 제한된 경우 자동 로그인을 설정할 수 없습니다. 현재 설정 조회에 실패하면 미확인으로 표시합니다. 모든 계정·관리 조건을 확인할 수는 없습니다.",
   "login.refresh": "FileVault 상태 다시 확인",
-  "login.wake": "잠자기에서 깨어날 때",
+  "login.wake": "잠자기·화면 보호기·화면 꺼짐",
   "login.wakeDetail":
-    "시작 시 자동 로그인과 별도 설정입니다. 잠자기·화면 보호기 후 암호 요구 시간은 잠금 화면에서 확인하세요. 로그아웃·사용자 전환·수동 잠금에도 시작 시 자동 로그인이 적용되지 않습니다. iPhone 미러링 자동 인증 때문에 암호 요구 시간을 바꾸지 못할 수도 있습니다.",
+    "시작 시 자동 로그인과 별도 설정입니다. 잠자기·화면 보호기·화면 꺼짐 후 암호 요구 시간은 잠금 화면에서 확인하세요. 로그아웃·사용자 전환·수동 잠금에도 시작 시 자동 로그인이 적용되지 않습니다. iPhone 미러링 자동 인증 때문에 암호 요구 시간을 바꾸지 못할 수도 있습니다.",
   "login.wakeRoute": "시스템 설정 → 잠금 화면",
   "login.before": "설정하기 전에",
   "login.physicalAccess": "암호 없이 접근하도록 설정하면 이 Mac을 사용할 수 있는 다른 사람도 계정의 파일과 앱에 접근할 수 있습니다.",
@@ -323,6 +327,11 @@ private let koreanAgentStrings: [String: String] = [
 ]
 
 private let englishAgentStrings: [String: String] = [
+  "login.actingUser": "Acting user (current console)",
+  "login.affectedAccount": "Affected account",
+  "login.machineScope": "Scope: machine-wide startup automatic login",
+  "login.affectedNone": "None — automatic login is currently off",
+  "login.affectedUnknown": "Unknown",
   "login.reviewChange": "Review change…",
   "login.apply": "Apply change",
   "login.choose": "Choose requested value",
@@ -334,7 +343,7 @@ private let englishAgentStrings: [String: String] = [
   "login.choice.fiveMinutes": "Require after 5 minutes",
   "login.choice.off": "Do not require password",
   "login.requestedStartup": "Requested startup setting",
-  "login.requestedWake": "Requested lock setting",
+  "login.requestedWake": "Requested sleep, screen saver & display-off password delay",
   "login.changePlan": "Review selected change",
   "login.directGate":
     "Direct changes are in preparation. The macOS command exists, but system authentication and account-password input are not yet verified, so actual application is blocked. Choosing and reviewing a value below does not change settings.",
@@ -343,11 +352,12 @@ private let englishAgentStrings: [String: String] = [
   "login.current.checking": "Checking current setting…",
   "login.current.startupOff": "Current startup automatic login: off",
   "login.current.startupUser": "Current automatic login account:",
-  "login.current.wakeOff": "Current lock password requirement: off",
-  "login.current.wakeImmediate": "Current lock password requirement: immediate",
-  "login.current.wakeSeconds": "Current lock password delay (seconds):",
+  "login.current.wakeOff": "Current sleep, screen saver & display-off password requirement: off",
+  "login.current.wakeImmediate":
+    "Current sleep, screen saver & display-off password requirement: immediate",
+  "login.current.wakeSeconds":
+    "Current sleep, screen saver & display-off password delay (seconds):",
   "login.confirmTitle": "Review login setting change",
-  "login.account": "Target account",
   "login.requested": "Requested value",
   "login.confirmPlan": "Confirm plan",
   "login.phase.idle": "Choose a requested value.",
@@ -373,9 +383,9 @@ private let englishAgentStrings: [String: String] = [
   "login.restrictions":
     "Automatic login is unavailable with FileVault, a prohibiting management policy, or an Apple Account login password. A failed status query remains unknown. Not all account and management restrictions can be verified.",
   "login.refresh": "Check FileVault again",
-  "login.wake": "Waking from sleep",
+  "login.wake": "Sleep, screen saver & display-off",
   "login.wakeDetail":
-    "This is separate from startup automatic login. Review the password delay after sleep or a screen saver in Lock Screen. Startup automatic login also does not apply to logout, user switching, or manual locking. Automatic iPhone Mirroring authentication may prevent changing the password delay.",
+    "This is separate from startup automatic login. Review the password delay after sleep, a screen saver, or display-off in Lock Screen. Startup automatic login also does not apply to logout, user switching, or manual locking. Automatic iPhone Mirroring authentication may prevent changing the password delay.",
   "login.wakeRoute": "System Settings → Lock Screen",
   "login.before": "Before changing settings",
   "login.physicalAccess":

@@ -100,6 +100,159 @@ func loginSecurityFailures() -> [String] {
       LoginToolStatusParser.wake(LoginToolResult(exitCode: 0, stderr: text)) == .unknown,
       "invalid wake output trusted")
   }
+  for changedPrompt in ["", "Pass '*' instead of password in commands above to request prompt."] {
+    let declaration = "Pass '-' instead of password in commands above to request prompt."
+    let changedCaps = LoginToolCapabilities.detect(
+      help: help.replacingOccurrences(of: declaration, with: changedPrompt), exitCode: 0)
+    expect(
+      changedCaps.startup && changedCaps.wake, "missing prompt disabled read-only status support")
+    expect(
+      !changedCaps.startupPasswordPrompt && !changedCaps.wakePasswordPrompt,
+      "missing/changed prompt declaration enabled password-dependent plans")
+    let limited = LoginSecuritySnapshot(
+      identity: identity, capabilities: changedCaps, fileVault: .off,
+      startup: .off, wake: .seconds(0))
+    expect(
+      LoginSecurityCommandPlan.make(action: .startupOff, snapshot: limited) != nil,
+      "startup off unnecessarily required a password prompt")
+    expect(
+      LoginSecurityCommandPlan.make(action: .startupCurrentUser, snapshot: limited) == nil,
+      "startup enable accepted an unverified prompt contract")
+    expect(
+      LoginSecurityCommandPlan.make(action: .wake(.off), snapshot: limited) == nil,
+      "wake mutation accepted an unverified prompt contract")
+  }
+  let otherAccount = snapshot(startup: .user("other"))
+  let offScope = LoginSecurityConfirmationScope(
+    action: .startupOff, snapshot: otherAccount, actor: identity)
+  expect(
+    offScope.actingUser == identity && offScope.affected == .machineAutomaticLogin(.user("other")),
+    "machine-wide startup off misidentified the acting user as the affected account")
+  let unknownScope = LoginSecurityConfirmationScope(
+    action: .startupOff, snapshot: snapshot(startup: .unknown), actor: identity)
+  expect(
+    unknownScope.affected == .machineAutomaticLogin(.unknown),
+    "unknown affected auto-login account was replaced with console user")
+  expect(
+    LoginSecurityConfirmationScope(
+      action: .startupCurrentUser, snapshot: otherAccount, actor: identity
+    ).affected == .account("fixture"),
+    "startup enable did not identify the requested target account")
+
+  final class MockSnapshotSource: LoginSecuritySnapshotSource {
+    let help: String
+    let identity: LoginConsoleIdentity
+    var startup = "Automatic login user: fixture"
+    var seconds = 0
+    var changedConsole = false
+    var events: [String] = []
+    var identityReads = 0
+    init(help: String, identity: LoginConsoleIdentity) {
+      self.help = help
+      self.identity = identity
+    }
+    func consoleIdentity() -> LoginConsoleIdentity? {
+      events.append("console")
+      identityReads += 1
+      return changedConsole && identityReads % 2 == 0
+        ? LoginConsoleIdentity(userName: "other", uid: 502) : identity
+    }
+    func read(_ command: LoginSecurityReadCommand) -> LoginToolResult {
+      switch command {
+      case .help:
+        events.append("help")
+        return LoginToolResult(exitCode: 0, stderr: help)
+      case .fileVaultStatus:
+        events.append("vault")
+        return LoginToolResult(exitCode: 1, stdout: "false\n")
+      case .startupStatus:
+        events.append("startup")
+        return LoginToolResult(exitCode: 0, stderr: startup)
+      case .wakeStatus:
+        events.append("wake")
+        return LoginToolResult(
+          exitCode: 0,
+          stderr: seconds == 0
+            ? "screenLock delay is immediate" : "screenLock delay is \(seconds) seconds")
+      }
+    }
+  }
+  let source = MockSnapshotSource(help: help, identity: identity)
+  let firstFresh = LoginSecuritySnapshotProvider.freshSnapshot(using: source)
+  source.startup = "Automatic login is OFF."
+  source.seconds = 60
+  let secondFresh = LoginSecuritySnapshotProvider.freshSnapshot(using: source)
+  expect(
+    firstFresh.startup == .user("fixture") && firstFresh.wake == .seconds(0)
+      && secondFresh.startup == .off && secondFresh.wake == .seconds(60),
+    "fresh provider reused cached OS observations")
+  expect(
+    source.events == [
+      "console", "help", "vault", "startup", "wake", "console",
+      "console", "help", "vault", "startup", "wake", "console",
+    ], "fresh provider did not query each OS source every time")
+  source.changedConsole = true
+  expect(
+    LoginSecuritySnapshotProvider.freshSnapshot(using: source).identity == nil,
+    "session change during OS reads was accepted")
+  for command in LoginSecurityReadCommand.allCases {
+    expect(
+      command.arguments == ["-help"] || command.arguments == ["-autologin", "status"]
+        || command.arguments == ["-screenLock", "status"] || command.arguments == ["isactive"],
+      "fresh provider command allowlist permits a security mutation")
+  }
+  final class FreshMockRunner: LoginSecurityActionRunner {
+    let source: MockSnapshotSource
+    var changeDuringAuth = false
+    var mutateOnApply = true
+    var applies = 0
+    init(_ source: MockSnapshotSource) { self.source = source }
+    func authenticationTransportVerified(for plan: LoginSecurityCommandPlan) -> Bool { true }
+    func currentSnapshot() -> LoginSecuritySnapshot {
+      LoginSecuritySnapshotProvider.freshSnapshot(using: source)
+    }
+    func authenticate(_ plan: LoginSecurityCommandPlan) -> LoginSecurityAuthenticationResult {
+      if changeDuringAuth { source.seconds = 60 }
+      return .authorized
+    }
+    func apply(_ plan: LoginSecurityCommandPlan) -> LoginSecurityApplyResult {
+      applies += 1
+      if mutateOnApply { source.startup = "Automatic login is OFF." }
+      return .finished
+    }
+  }
+  let liveSource = MockSnapshotSource(help: help, identity: identity)
+  let freshRunner = FreshMockRunner(liveSource)
+  var freshSession = LoginSecurityChangeSession()
+  freshSession.choose(
+    .startupOff, snapshot: LoginSecuritySnapshotProvider.freshSnapshot(using: liveSource))
+  liveSource.events = []
+  freshSession.confirm(using: freshRunner)
+  expect(
+    freshSession.phase == .applied && freshRunner.applies == 1 && liveSource.events.count == 18,
+    "pre-auth/pre-apply/readback did not each obtain fresh OS reads")
+  for changeAfterAuth in [false, true] {
+    let changedSource = MockSnapshotSource(help: help, identity: identity)
+    let runner = FreshMockRunner(changedSource)
+    runner.changeDuringAuth = changeAfterAuth
+    freshSession.choose(
+      .startupOff, snapshot: LoginSecuritySnapshotProvider.freshSnapshot(using: changedSource))
+    if !changeAfterAuth { changedSource.seconds = 60 }
+    freshSession.confirm(using: runner)
+    expect(
+      freshSession.phase == .failed(.contextChanged) && runner.applies == 0,
+      "fresh OS change before/after auth did not prevent application")
+  }
+  let mismatchSource = MockSnapshotSource(help: help, identity: identity)
+  let noWriteRunner = FreshMockRunner(mismatchSource)
+  noWriteRunner.mutateOnApply = false
+  freshSession.choose(
+    .startupOff, snapshot: LoginSecuritySnapshotProvider.freshSnapshot(using: mismatchSource))
+  mismatchSource.events = []
+  freshSession.confirm(using: noWriteRunner)
+  expect(
+    freshSession.phase == .failed(.readbackMismatch) && mismatchSource.events.count == 18,
+    "unchanged fresh readback was silently replaced with the desired setting")
   let off = LoginSecurityCommandPlan.make(action: .startupOff, snapshot: initial)!
   expect(
     off.executable == "/usr/sbin/sysadminctl"

@@ -13,6 +13,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   private var automaticLoginQueryPending = false
   private var loginSecuritySnapshot: LoginSecuritySnapshot?
   private var loginSecuritySession = LoginSecurityChangeSession()
+  private var loginSecurityOperationID = UUID()
+  private var loginSecurityOperationPending = false
   private let startupLoginChoice = NSPopUpButton()
   private let wakeLoginChoice = NSPopUpButton()
   private let startupLoginObservationLabel = NSTextField(wrappingLabelWithString: "")
@@ -985,7 +987,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   }
 
   @objc private func refreshAutomaticLoginStatus() {
-    guard !isPreview, !automaticLoginQueryPending else { return }
+    guard !isPreview, !automaticLoginQueryPending, !loginSecurityOperationPending else { return }
     automaticLoginQueryPending = true
     loginSecuritySnapshot = nil
     loginSecuritySession.cancel()
@@ -993,25 +995,25 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     startupLoginObservationLabel.stringValue = flowText("login.current.checking")
     wakeLoginObservationLabel.stringValue = flowText("login.current.checking")
     automaticLoginStatusLabel.stringValue = flowText("login.status.checking")
-    AutomaticLoginSupport.queryFileVault { [weak self] fileVault in
+    LoginSecurityStatusReader.query { [weak self] snapshot in
       guard let self else { return }
-      let key: String
-      switch AutomaticLoginPolicy.eligibility(fileVault: fileVault) {
-      case .blockedByFileVault: key = "login.status.blocked"
-      case .needsSystemSettingsReview: key = "login.status.review"
-      case .unknown: key = "login.status.unknown"
-      }
-      self.automaticLoginStatusLabel.stringValue = flowText(key)
-      LoginSecurityStatusReader.query(fileVault: fileVault) { [weak self] snapshot in
-        guard let self else { return }
-        self.automaticLoginQueryPending = false
-        self.loginSecuritySnapshot = snapshot
-        self.startupLoginObservationLabel.stringValue = self.startupObservationText(
-          snapshot.startup)
-        self.wakeLoginObservationLabel.stringValue = self.wakeObservationText(snapshot.wake)
-        self.updateLoginSecurityChoices()
-      }
+      self.automaticLoginQueryPending = false
+      self.loginSecuritySnapshot = snapshot
+      self.updateLoginSecurityObservations(snapshot)
+      self.updateLoginSecurityChoices()
     }
+  }
+
+  private func updateLoginSecurityObservations(_ snapshot: LoginSecuritySnapshot) {
+    let key: String
+    switch AutomaticLoginPolicy.eligibility(fileVault: snapshot.fileVault) {
+    case .blockedByFileVault: key = "login.status.blocked"
+    case .needsSystemSettingsReview: key = "login.status.review"
+    case .unknown: key = "login.status.unknown"
+    }
+    automaticLoginStatusLabel.stringValue = flowText(key)
+    startupLoginObservationLabel.stringValue = startupObservationText(snapshot.startup)
+    wakeLoginObservationLabel.stringValue = wakeObservationText(snapshot.wake)
   }
 
   private func selectedStartupAction() -> LoginSecurityAction? {
@@ -1029,12 +1031,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   }
 
   @objc private func loginSecurityChoiceChanged() {
+    guard !loginSecurityOperationPending else { return }
+    loginSecurityOperationID = UUID()
     loginSecuritySession.cancel()
     updateLoginSecurityChoices()
   }
 
   private func updateLoginSecurityChoices() {
-    guard !isPreview, let snapshot = loginSecuritySnapshot else {
+    guard !isPreview, !loginSecurityOperationPending, let snapshot = loginSecuritySnapshot else {
       reviewStartupLoginButton.isEnabled = false
       reviewWakeLoginButton.isEnabled = false
       return
@@ -1076,7 +1080,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   @objc private func reviewWakeLoginChange() { reviewLoginSecurityChange(selectedWakeAction()) }
 
   private func reviewLoginSecurityChange(_ action: LoginSecurityAction?) {
-    guard !isPreview, let action, let snapshot = loginSecuritySnapshot else { return }
+    guard !isPreview, !loginSecurityOperationPending, !automaticLoginQueryPending,
+      let action, let snapshot = loginSecuritySnapshot else { return }
     loginSecuritySession.choose(action, snapshot: snapshot)
     guard let plan = loginSecuritySession.plan else { return }
     statusLabel.stringValue = flowText("login.phase.confirm")
@@ -1095,8 +1100,23 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
       before = wakeObservationText(snapshot.wake)
       after = wakeLoginChoice.titleOfSelectedItem ?? delay.rawValue
     }
+    let scope = LoginSecurityConfirmationScope(
+      action: action, snapshot: snapshot, actor: plan.identity)
+    let affected: String
+    switch scope.affected {
+    case .account(let name): affected = flowText("login.affectedAccount") + ": " + name
+    case .machineAutomaticLogin(let observation):
+      let account: String
+      switch observation {
+      case .user(let name): account = name
+      case .off: account = flowText("login.affectedNone")
+      case .blockedByFileVault, .unknown: account = flowText("login.affectedUnknown")
+      }
+      affected =
+        flowText("login.machineScope") + "\n" + flowText("login.affectedAccount") + ": " + account
+    }
     alert.informativeText =
-      "\(flowText("login.account")): \(plan.identity.userName)\n\(before)\n\(flowText("login.requested")): \(after)\n\n\(flowText("login.physicalAccess"))\n\n\(flowText("login.directGate"))"
+      "\(flowText("login.actingUser")): \(scope.actingUser.userName)\n\(affected)\n\(before)\n\(flowText("login.requested")): \(after)\n\n\(flowText("login.physicalAccess"))\n\n\(flowText("login.directGate"))"
     alert.addButton(withTitle: flowText("login.confirmPlan"))
     alert.addButton(withTitle: flowText("apps.cancel"))
     guard alert.runModal() == .alertFirstButtonReturn else {
@@ -1109,25 +1129,39 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
   }
 
   @objc private func applyLoginSecurityChange() {
-    guard !isPreview, let snapshot = loginSecuritySnapshot else { return }
-    let runner = GatedLoginSecurityRunner { [weak self] in
-      guard let self, LoginSecurityStatusReader.consoleIdentity() == snapshot.identity else {
-        return LoginSecuritySnapshot(
-          identity: nil, capabilities: .unknown, fileVault: .unknown,
-          startup: .unknown, wake: .unknown)
+    guard !isPreview, !loginSecurityOperationPending,
+      loginSecuritySession.phase == .awaitingConfirmation
+    else { return }
+    loginSecurityOperationPending = true
+    loginSecurityOperationID = UUID()
+    let operation = loginSecurityOperationID
+    let selectedSession = loginSecuritySession
+    startupLoginChoice.isEnabled = false
+    wakeLoginChoice.isEnabled = false
+    updateLoginSecurityChoices()
+    // Fresh OS reads run off the UI thread. The production runner performs new
+    // reads on every pre-auth, pre-apply and readback call; it has no cache closure.
+    DispatchQueue.global(qos: .utility).async { [weak self] in
+      var session = selectedSession
+      session.confirm(using: GatedLoginSecurityRunner()) { phase in
+        DispatchQueue.main.async { [weak self] in
+          guard let self, self.loginSecurityOperationID == operation else { return }
+          self.updateLoginSecurityPhase(phase)
+        }
       }
-      return self.loginSecuritySnapshot
-        ?? LoginSecuritySnapshot(
-          identity: nil, capabilities: .unknown,
-          fileVault: .unknown, startup: .unknown, wake: .unknown)
-    }
-    loginSecuritySession.confirm(using: runner) { [weak self] phase in
-      self?.updateLoginSecurityPhase(phase)
-    }
-    if let observed = loginSecuritySession.lastObservation {
-      loginSecuritySnapshot = observed
-      startupLoginObservationLabel.stringValue = startupObservationText(observed.startup)
-      wakeLoginObservationLabel.stringValue = wakeObservationText(observed.wake)
+      let completed = session
+      DispatchQueue.main.async { [weak self] in
+        guard let self, self.loginSecurityOperationID == operation else { return }
+        self.loginSecuritySession = completed
+        self.loginSecurityOperationPending = false
+        self.startupLoginChoice.isEnabled = true
+        self.wakeLoginChoice.isEnabled = true
+        if let observed = completed.lastObservation {
+          self.loginSecuritySnapshot = observed
+          self.updateLoginSecurityObservations(observed)
+        }
+        self.updateLoginSecurityChoices()
+      }
     }
   }
 

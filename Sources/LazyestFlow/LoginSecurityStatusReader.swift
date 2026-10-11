@@ -3,22 +3,8 @@ import Foundation
 import LazyestCore
 import SystemConfiguration
 
-/// Only these three read-only sysadminctl forms can reach Process in production.
-/// Mutation plans are never executed by this reader.
-private enum LoginSecurityReadCommand: CaseIterable {
-  case help
-  case startupStatus
-  case wakeStatus
-
-  var arguments: [String] {
-    switch self {
-    case .help: return ["-help"]
-    case .startupStatus: return ["-autologin", "status"]
-    case .wakeStatus: return ["-screenLock", "status"]
-    }
-  }
-}
-
+/// Production execution accepts only the closed read-only command enum.
+/// Mutation plans never reach this reader.
 private final class BoundedLoginToolOutput {
   private let lock = NSLock()
   private var bytes = Data()
@@ -55,9 +41,9 @@ enum LoginSecurityStatusReader {
     return LoginConsoleIdentity(userName: name, uid: uid)
   }
 
-  private static func read(_ command: LoginSecurityReadCommand) -> LoginToolResult {
+  fileprivate static func read(_ command: LoginSecurityReadCommand) -> LoginToolResult {
     let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/sbin/sysadminctl")
+    process.executableURL = URL(fileURLWithPath: command.executable)
     process.arguments = command.arguments
     process.environment = ["LANG": "C", "LC_ALL": "C"]
     process.standardInput = FileHandle.nullDevice
@@ -95,25 +81,14 @@ enum LoginSecurityStatusReader {
     }
   }
 
-  static func query(
-    fileVault: AutomaticLoginPolicy.FileVaultState,
-    completion: @escaping (LoginSecuritySnapshot) -> Void
-  ) {
-    let originalIdentity = consoleIdentity()
+  static func freshSnapshot() -> LoginSecuritySnapshot {
+    LoginSecuritySnapshotProvider.freshSnapshot(using: SystemLoginSecuritySnapshotSource())
+  }
+
+  static func query(completion: @escaping (LoginSecuritySnapshot) -> Void) {
     DispatchQueue.global(qos: .utility).async {
-      let help = read(.help)
-      let capabilities = LoginToolCapabilities.detect(
-        help: help.stdout + help.stderr, exitCode: help.exitCode, timedOut: help.timedOut)
-      let startup =
-        capabilities.startup ? LoginToolStatusParser.startup(read(.startupStatus)) : .unknown
-      let wake = capabilities.wake ? LoginToolStatusParser.wake(read(.wakeStatus)) : .unknown
-      DispatchQueue.main.async {
-        let identity = consoleIdentity()
-        completion(
-          LoginSecuritySnapshot(
-            identity: identity == originalIdentity ? identity : nil,
-            capabilities: capabilities, fileVault: fileVault, startup: startup, wake: wake))
-      }
+      let snapshot = freshSnapshot()
+      DispatchQueue.main.async { completion(snapshot) }
     }
   }
 }
@@ -122,15 +97,16 @@ enum LoginSecurityStatusReader {
 /// from the power helper and the allowlisted read-only Process implementation.
 final class GatedLoginSecurityRunner: LoginSecurityActionRunner {
   func authenticationTransportVerified(for plan: LoginSecurityCommandPlan) -> Bool { false }
-  private let snapshotProvider: () -> LoginSecuritySnapshot
-
-  init(snapshotProvider: @escaping () -> LoginSecuritySnapshot) {
-    self.snapshotProvider = snapshotProvider
-  }
-
-  func currentSnapshot() -> LoginSecuritySnapshot { snapshotProvider() }
+  func currentSnapshot() -> LoginSecuritySnapshot { LoginSecurityStatusReader.freshSnapshot() }
   func authenticate(_ plan: LoginSecurityCommandPlan) -> LoginSecurityAuthenticationResult {
     .denied
   }
   func apply(_ plan: LoginSecurityCommandPlan) -> LoginSecurityApplyResult { .failed }
+}
+
+private struct SystemLoginSecuritySnapshotSource: LoginSecuritySnapshotSource {
+  func consoleIdentity() -> LoginConsoleIdentity? { LoginSecurityStatusReader.consoleIdentity() }
+  func read(_ command: LoginSecurityReadCommand) -> LoginToolResult {
+    LoginSecurityStatusReader.read(command)
+  }
 }
